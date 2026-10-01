@@ -1,0 +1,32 @@
+{
+  "proton-cli": {
+    "version": "0.8.0",
+    "url": "https://proton.me/download/drive/cli/0.8.0/linux-x64-baseline/proton-drive",
+    "hash": "sha256-dl/UNOfqU/H0XII0CK0Q39ymAGmIWjtXfEIOJRF3UXU=",
+    "updates": {
+      "provider": "proton-cli",
+      "url": "https://proton.me/download/drive/cli/index.html",
+      "reason": "Baseline CPU build retained for NAS compatibility."
+    }
+  },
+  "debian-vm": {
+    "version": "20260923-2610",
+    "url": "https://cloud.debian.org/images/cloud/bookworm/20260923-2610/debian-12-genericcloud-amd64-20260923-2610.qcow2",
+    "sha512": "3d94c9dd66d8a283fde060b8810373b7ae04038b956ee00d553d1ae564f6fbdeaa2fd6e7404e87e53348b5a9509170f3ea7c0731ba737590c5c4cb8d559a47f8",
+    "updates": {
+      "provider": "debian-cloud",
+      "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.json",
+      "reason": "Debian 12 retained for OMV 7 compatibility."
+    }
+  },
+  "debian-container": {
+    "image": "debian",
+    "tag": "12-slim",
+    "digest": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+    "updates": {
+      "provider": "docker-hub",
+      "url": "https://registry.hub.docker.com/v2/repositories/library/debian/tags",
+      "reason": "Debian 12 retained for OMV 7 compatibility."
+    }
+  }
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Probe
+{% if config.enable -%}
+[Service]
+Type=oneshot
+{% else -%}
+[Service]
+Type=oneshot
+{% endif -%}
+ExecStart=/bin/true

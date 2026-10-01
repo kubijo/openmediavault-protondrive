@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+# shellcheck disable=SC1091
+. /usr/share/openmediavault/scripts/helper-functions
+case "$1" in
+configure)
+    if ! getent passwd protondrive >/dev/null; then
+        useradd --system --user-group --no-create-home --home-dir /var/lib/openmediavault-protondrive/proton --shell /usr/sbin/nologin protondrive
+    fi
+    install -d -o root -g protondrive -m 0750 /var/lib/openmediavault-protondrive
+    install -d -o protondrive -g protondrive -m 0700 /var/lib/openmediavault-protondrive/proton
+    omv-confdbadm create conf.service.protondrive
+    if [ -n "${2:-}" ]; then
+        omv-confdbadm migrate conf.service.protondrive "$2"
+    fi
+    omv_module_set_dirty protondrive
+    dpkg-trigger update-workbench
+    ;;
+abort-upgrade | abort-remove | abort-deconfigure) ;;
+esac

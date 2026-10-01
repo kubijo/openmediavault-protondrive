@@ -1,0 +1,30 @@
+Source: openmediavault-protondrive
+Section: admin
+Priority: optional
+Maintainer: OMV Proton Drive contributors <kubijo@users.noreply.github.com>
+Build-Depends:
+ dpkg-dev,
+ nix-bin,
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: openmediavault-protondrive
+Architecture: amd64
+XB-Plugin-Section: backup
+XB-Plugin-Architecture: amd64
+Depends:
+ ca-certificates,
+ dbus,
+ gnome-keyring,
+ libc6 (>= 2.36),
+ libsecret-1-0,
+ openmediavault (<< 8),
+ openmediavault (>= 7.7.9),
+ passwd,
+ python3 (>= 3.11),
+ tar (>= 1.31),
+ zstd,
+Description: OpenMediaVault backups to Proton Drive
+ Archive selected NAS paths with ownership, ACLs and extended attributes,
+ restore stopped containers, and upload timestamped backups to Proton Drive.
+ Includes a private keyring session and configurable local and remote retention.

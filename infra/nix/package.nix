@@ -1,0 +1,57 @@
+{
+  pkgs,
+  src,
+  cli,
+}:
+let
+  # Source organization is independent of OMV's required installation paths.
+  installPaths = {
+    "src/bin/omv-protondrive" = "usr/sbin/omv-protondrive";
+    "src/bin/omv-protondrive-auth" = "usr/sbin/omv-protondrive-auth";
+    "src/bin/session.sh" = "usr/share/openmediavault-protondrive/session.sh";
+    "src/protondrive" = "usr/share/openmediavault-protondrive/protondrive";
+    "src/omv" = "usr/share/openmediavault";
+    "src/salt" = "srv/salt/omv/deploy/protondrive";
+  };
+in
+pkgs.runCommand "openmediavault-protondrive-7.0.0"
+  {
+    nativeBuildInputs = [
+      pkgs.dpkg
+      pkgs.gzip
+    ];
+  }
+  ''
+    export SOURCE_DATE_EPOCH=1790845200
+    cp -r ${src}/debian debian
+    chmod -R u+w debian
+    mkdir -p package/DEBIAN "$out"
+    ${pkgs.lib.concatStringsSep "\n" (
+      pkgs.lib.mapAttrsToList (source: destination: ''
+        mkdir -p package/${dirOf destination}
+        cp -r ${src}/${source} package/${destination}
+      '') installPaths
+    )}
+    find package -type d -exec chmod 0755 {} +
+    find package -type f -exec chmod 0644 {} +
+    find package -name __pycache__ -type d -prune -exec rm -r {} +
+    find package -name '*.pyc' -delete
+    install -Dm755 ${cli} package/usr/lib/openmediavault-protondrive/proton-drive
+    chmod 0755 package/usr/sbin/* package/usr/share/openmediavault/confdb/create.d/* \
+      package/usr/share/openmediavault-protondrive/session.sh
+    for script in postinst prerm postrm; do
+      install -m755 debian/openmediavault-protondrive.$script package/DEBIAN/$script
+    done
+    install -m644 debian/openmediavault-protondrive.triggers package/DEBIAN/triggers
+    install -Dm644 debian/openmediavault-protondrive.lintian-overrides package/usr/share/lintian/overrides/openmediavault-protondrive
+    docs=package/usr/share/doc/openmediavault-protondrive
+    mkdir -p "$docs"
+    install -m644 debian/copyright ${src}/README.md "$docs/"
+    install -m644 ${src}/docs/restore.md "$docs/RESTORE.md"
+    gzip -n -9 < debian/changelog > "$docs/changelog.gz"
+    # Debian's own structured control parser supplies XB fields, version and size.
+    dpkg-gencontrol -popenmediavault-protondrive -Ppackage -v7.0.0
+    (cd package; find usr srv -type f -print0 | sort -z | xargs -0 md5sum) > package/DEBIAN/md5sums
+    find package -exec touch --date="@$SOURCE_DATE_EPOCH" {} +
+    dpkg-deb --build --root-owner-group package "$out/openmediavault-protondrive_7.0.0_amd64.deb"
+  ''

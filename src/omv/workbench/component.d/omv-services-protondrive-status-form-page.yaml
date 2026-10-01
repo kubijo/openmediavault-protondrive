@@ -1,0 +1,106 @@
+version: '1.0'
+type: component
+data:
+  name: omv-services-protondrive-status-form-page
+  type: formPage
+  config:
+    autoReload: 3000
+    request:
+      service: ProtonDrive
+      get:
+        method: getStatus
+    fields:
+      - type: textInput
+        name: authstate
+        label: _("Authentication")
+        readonly: true
+      - type: hidden
+        name: authurl
+      - type: card
+        text: '<a href="{{ authurl | escape }}" target="_blank" rel="noopener noreferrer">Open Proton sign-in</a>'
+        modifiers:
+          - type: hidden
+            constraint:
+              operator: eq
+              arg0:
+                prop: authurl
+              arg1: ''
+      - type: textInput
+        name: autherror
+        label: _("Authentication detail")
+        readonly: true
+      - type: textInput
+        name: phase
+        label: _("Backup phase")
+        readonly: true
+      - type: textInput
+        name: lastsuccess
+        label: _("Last successful backup")
+        readonly: true
+      - type: textarea
+        name: details
+        label: _("Backup sets")
+        readonly: true
+      - type: textarea
+        name: error
+        label: _("Last error")
+        readonly: true
+      - type: hidden
+        name: running
+    buttons:
+      - text: _("Settings")
+        execute:
+          type: url
+          url: /services/protondrive/settings
+      - text: _("Backup sets")
+        execute:
+          type: url
+          url: /services/protondrive/sets
+      - text: _("Sign in")
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: startAuth
+      - text: _("Cancel sign-in")
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: cancelAuth
+      - text: _("Sign out")
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: logout
+      - text: _("Run now")
+        execute:
+          type: taskDialog
+          taskDialog:
+            config:
+              title: _("Proton Drive backup")
+              startOnInit: true
+              buttons:
+                stop:
+                  hidden: true
+              request:
+                service: ProtonDrive
+                method: runNow
+      - text: _("Cancel backup")
+        enabledConstraint:
+          operator: truthy
+          arg0:
+            prop: running
+        execute:
+          type: taskDialog
+          taskDialog:
+            config:
+              title: _("Cancel backup and recover containers")
+              startOnInit: true
+              buttons:
+                stop:
+                  hidden: true
+              request:
+                service: ProtonDrive
+                method: cancelRun

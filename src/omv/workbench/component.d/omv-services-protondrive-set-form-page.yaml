@@ -1,0 +1,67 @@
+version: '1.0'
+type: component
+data:
+  name: omv-services-protondrive-set-form-page
+  type: formPage
+  config:
+    request:
+      service: ProtonDrive
+      get:
+        method: getSet
+        params:
+          uuid: '{{ _routeParams.uuid }}'
+      post:
+        method: setSet
+    fields:
+      - type: confObjUuid
+        name: uuid
+      - type: textInput
+        name: name
+        label: _("Name")
+        validators:
+          required: true
+          pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$'
+      - type: checkbox
+        name: enable
+        label: _("Enabled")
+        value: true
+      - type: textarea
+        name: paths
+        label: _("Source paths")
+        hint: _("One absolute path per line.")
+        validators:
+          required: true
+      - type: textarea
+        name: excludes
+        label: _("Exclude paths")
+        value: ''
+        hint: _("One literal path per line, relative to each source directory.")
+      - type: checkbox
+        name: stopcontainers
+        label: _("Stop running containers while archiving")
+        value: false
+      - type: numberInput
+        name: localkeep
+        label: _("Local copies to keep")
+        value: 2
+        validators:
+          min: 1
+          max: 10000
+          required: true
+      - type: numberInput
+        name: remotekeep
+        label: _("Remote copies to keep")
+        value: 7
+        validators:
+          min: 1
+          max: 10000
+          required: true
+    buttons:
+      - template: cancel
+        execute:
+          type: url
+          url: /services/protondrive/sets
+      - template: submit
+        execute:
+          type: url
+          url: /services/protondrive/sets

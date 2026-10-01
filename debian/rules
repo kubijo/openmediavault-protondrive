@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+.PHONY: build binary binary-arch binary-indep clean
+build:
+	nix build .\#openmediavault-protondrive
+
+binary: binary-arch
+
+binary-arch: build
+	cp result/*.deb ..
+
+binary-indep:
+
+clean:
+	rm -f result

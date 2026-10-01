@@ -1,0 +1,53 @@
+{
+  "type": "rpc",
+  "id": "rpc.protondrive.setSet",
+  "params": {
+    "type": "object",
+    "properties": {
+      "uuid": {
+        "type": "string",
+        "format": "uuidv4",
+        "required": true
+      },
+      "name": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+        "required": true
+      },
+      "enable": {
+        "type": "boolean",
+        "default": true,
+        "required": true
+      },
+      "paths": {
+        "type": "string",
+        "required": true
+      },
+      "excludes": {
+        "type": "string",
+        "default": "",
+        "required": true
+      },
+      "stopcontainers": {
+        "type": "boolean",
+        "default": false,
+        "required": true
+      },
+      "localkeep": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 2,
+        "required": true
+      },
+      "remotekeep": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000,
+        "default": 7,
+        "required": true
+      }
+    },
+    "additionalProperties": false
+  }
+}

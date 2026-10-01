@@ -1,0 +1,111 @@
+{
+  "type": "config",
+  "id": "conf.service.protondrive",
+  "title": "Proton Drive",
+  "queryinfo": {
+    "xpath": "//services/protondrive",
+    "iterable": false
+  },
+  "properties": {
+    "enable": {
+      "type": "boolean",
+      "default": false
+    },
+    "schedulehour": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "default": 3
+    },
+    "scheduleminute": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 59,
+      "default": 0
+    },
+    "stagingpath": {
+      "type": "string",
+      "default": "/data/.omv-protondrive"
+    },
+    "remotepath": {
+      "type": "string",
+      "default": "/my-files/OMV Backups"
+    },
+    "instanceuuid": {
+      "type": "string",
+      "format": "uuidv4"
+    },
+    "minimumfreebytes": {
+      "type": "integer",
+      "minimum": 1048576,
+      "maximum": 9007199254740991,
+      "default": 1073741824
+    },
+    "containerstoptimeout": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 600,
+      "default": 120
+    },
+    "commandtimeout": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 600,
+      "default": 180
+    },
+    "transfertimeout": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 86400,
+      "default": 86400
+    },
+    "sets": {
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uuid": {
+                "type": "string",
+                "format": "uuidv4"
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+              },
+              "enable": {
+                "type": "boolean",
+                "default": true
+              },
+              "paths": {
+                "type": "string"
+              },
+              "excludes": {
+                "type": "string",
+                "default": ""
+              },
+              "stopcontainers": {
+                "type": "boolean",
+                "default": false
+              },
+              "localkeep": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000,
+                "default": 2
+              },
+              "remotekeep": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000,
+                "default": 7
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

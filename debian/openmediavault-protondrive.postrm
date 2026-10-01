@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+case "$1" in
+remove | purge)
+    for unit in omv-protondrive.service omv-protondrive-backup.service omv-protondrive-backup.timer omv-protondrive-recover.service; do
+        systemctl disable "$unit" 2>/dev/null || true
+        rm -f "/etc/systemd/system/$unit"
+    done
+    systemctl daemon-reload 2>/dev/null || true
+    dpkg-trigger update-workbench
+    ;;
+esac
+if [ "$1" = purge ]; then
+    # shellcheck disable=SC1091
+    . /usr/share/openmediavault/scripts/helper-functions
+    omv_config_delete /config/services/protondrive
+    rm -f /etc/openmediavault/protondrive.json
+    # Backups and recovery evidence are deliberately retained, including on purge.
+    rm -rf /var/lib/openmediavault-protondrive/proton
+fi

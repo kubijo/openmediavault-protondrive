@@ -1,0 +1,26 @@
+[project]
+name = "omv-protondrive-tooling"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "jinja2>=3.1.6",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "tyro>=1.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+cache-dir = ".tmp/ruff_cache"
+
+[tool.deptry]
+known_first_party = ["protondrive", "helpers", "console", "qa_report", "outdated", "audit"]
+extend_exclude = [".tmp", "result"]
+
+[tool.deptry.package_module_name_map]
+jinja2 = "jinja2"
+pyyaml = "yaml"
+tyro = "tyro"
+rich = "rich"

@@ -1,0 +1,5 @@
+openmediavault-protondrive (7.0.0) unstable; urgency=medium
+
+  * Initial OMV 7 plugin, with a Nix-pinned Proton Drive CLI.
+
+ -- OMV Proton Drive contributors <kubijo@users.noreply.github.com>  Thu, 01 Oct 2026 12:00:00 +0300
