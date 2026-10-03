@@ -5,17 +5,17 @@ amd64 with OMV 7.7.9 or newer in the 7.x series. Bundles Proton Drive CLI 0.8.0;
 
 ## Build and validate
 
-The lockfile pins the published nix-tools release. Clear any `NIX_ARGS` override left from local tooling trials.
+Use the published nix-tools v0.7.1 pin for local builds and validation:
 
 ```sh
-unset NIX_ARGS
 nix develop
-just validate
-just build
+just dev::validate
+just app::build
 ```
 
-The package is `result/openmediavault-protondrive_7.0.0_amd64.deb`. `just validate` runs the Nix-defined formatting,
-lint, tests and package build, and rejects untracked source files. Use `just format` to apply formatting.
+The package is `result/openmediavault-protondrive_7.0.0_amd64.deb`. `just dev::validate` runs the Nix-defined
+formatting, lint, tests and package build, and rejects untracked source files. Use `just dev::format` to apply
+formatting.
 
 Tooling uses Python 3.14 via uv/uv2nix; the installed runtime supports Debian's Python 3.11. Run `uv sync` for editor
 dependencies in `.venv`. Nix assembles the package using the hash-pinned CLI source in `infra/nix/proton-cli.nix`.
@@ -50,12 +50,19 @@ Source lives in [`src/`](src/README.md), repository commands in [`tools/`](tools
 
 GitHub Actions runs QA and Debian integration on pushes and pull requests; OMV VM tests run weekly or manually.
 
-`just integration-debian` checks the CLI, runtime and keyring in a disposable container. `just integration-vm` exercises
-OMV, container recovery and backup/restore in an isolated QEMU guest. Live Proton authentication and round-trip tests
-remain separate [release checks](tests/integration/README.md).
+`just test::debian` checks the CLI, runtime and keyring in a disposable container. `just test::vm` exercises OMV,
+container recovery and backup/restore in an isolated QEMU guest. Live Proton authentication and round-trip tests remain
+separate [release checks](tests/integration/README.md).
+
+For hands-on testing, `just vm::up` starts a persistent local OMV VM in the background and opens its SSH shell. Exiting
+SSH leaves the VM running. Use `just vm::ssh` to reconnect and `just vm::down` to shut it down without losing the login
+session. The guest login banner lists its own `just` commands. See the
+[interactive VM instructions](tests/integration/README.md#interactive-vm). `just vm::probe` checks the running VM in
+Chromium and saves desktop/mobile screenshots. `just vm::flow` runs a separate VM through web setting changes, disk
+restore, reset, and the backup/restore suite without touching the hands-on VM.
 
 - [QA coverage](docs/qa-coverage.md)
-- [Version reporting and security audits](docs/maintenance.md): `just outdated` and `just audit`.
+- [Version reporting and security audits](docs/maintenance.md): `just dev::outdated` and `just dev::audit`.
 - Upstream references:
   [OMV OneDrive plugin](https://github.com/openmediavault/openmediavault/tree/fa3125f5f18bc740d11caad3ffe8776c55cdf210/deb/openmediavault-onedrive)
   and

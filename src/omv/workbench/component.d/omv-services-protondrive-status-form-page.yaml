@@ -4,49 +4,42 @@ data:
   name: omv-services-protondrive-status-form-page
   type: formPage
   config:
+    title: _("Proton Drive")
+    subTitle: _("Account and backup status")
     autoReload: 3000
     request:
       service: ProtonDrive
       get:
         method: getStatus
     fields:
-      - type: textInput
+      - type: hidden
         name: authstate
-        label: _("Authentication")
-        readonly: true
+        value: loading
       - type: hidden
         name: authurl
-      - type: card
-        text: '<a href="{{ authurl | escape }}" target="_blank" rel="noopener noreferrer">Open Proton sign-in</a>'
-        modifiers:
-          - type: hidden
-            constraint:
-              operator: eq
-              arg0:
-                prop: authurl
-              arg1: ''
-      - type: textInput
+      - type: hidden
         name: autherror
-        label: _("Authentication detail")
-        readonly: true
-      - type: textInput
+      - type: hidden
+        name: accountemail
+      - type: hidden
+        name: accountorganization
+      - type: hidden
         name: phase
-        label: _("Backup phase")
-        readonly: true
-      - type: textInput
+      - type: hidden
         name: lastsuccess
-        label: _("Last successful backup")
-        readonly: true
-      - type: textarea
+      - type: hidden
         name: details
-        label: _("Backup sets")
-        readonly: true
-      - type: textarea
+      - type: hidden
         name: error
-        label: _("Last error")
-        readonly: true
       - type: hidden
         name: running
+        value: false
+      - type: card
+        name: accountstatus
+        textFile: account.html.njk
+      - type: card
+        name: backupstatus
+        textFile: backup.html.njk
     buttons:
       - text: _("Settings")
         execute:
@@ -57,24 +50,51 @@ data:
           type: url
           url: /services/protondrive/sets
       - text: _("Sign in")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0: {operator: falsy, arg0: {prop: running}}
+          arg1:
+            operator: in
+            arg0: {prop: authstate}
+            arg1: [signed-out, error]
         execute:
           type: request
           request:
             service: ProtonDrive
             method: startAuth
+            progressMessage: _("Starting Proton sign-in…")
+            successNotification: _("Sign-in started. Follow the link in the Account section.")
       - text: _("Cancel sign-in")
+        disabled: true
+        enabledConstraint:
+          operator: eq
+          arg0: {prop: authstate}
+          arg1: signing-in
         execute:
           type: request
           request:
             service: ProtonDrive
             method: cancelAuth
+            progressMessage: _("Cancelling sign-in…")
       - text: _("Sign out")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0: {operator: falsy, arg0: {prop: running}}
+          arg1: {operator: eq, arg0: {prop: authstate}, arg1: signed-in}
         execute:
           type: request
           request:
             service: ProtonDrive
             method: logout
+            progressMessage: _("Signing out…")
       - text: _("Run now")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0: {operator: falsy, arg0: {prop: running}}
+          arg1: {operator: eq, arg0: {prop: authstate}, arg1: signed-in}
         execute:
           type: taskDialog
           taskDialog:
@@ -88,6 +108,7 @@ data:
                 service: ProtonDrive
                 method: runNow
       - text: _("Cancel backup")
+        disabled: true
         enabledConstraint:
           operator: truthy
           arg0:

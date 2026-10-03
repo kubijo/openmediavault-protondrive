@@ -1,10 +1,13 @@
 set default-list
-set positional-arguments
-set shell := ["bash", "-euo", "pipefail", "-c"]
 
-nix_args := env("NIX_ARGS", "")
+# Build the installable Debian package.
+mod app 'tools/just/app.just'
 
-import 'tools/just/qa.just'
-import 'tools/just/package.just'
-import 'tools/just/maintenance.just'
-import 'tools/just/integration.just'
+# Run development checks, audits, and update reports.
+mod dev 'tools/just/dev.just'
+
+# Run unit tests and disposable guest integration tests.
+mod test 'tools/just/test.just'
+
+# Control a persistent interactive OMV VM.
+mod vm 'tools/just/vm.just'

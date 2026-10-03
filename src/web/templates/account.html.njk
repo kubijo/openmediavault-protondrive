@@ -1,0 +1,36 @@
+<h3 class="protondrive-status-heading omv-mt-z">Account</h3>
+{% if authstate == 'loading' %}
+    <p>Loading account status…</p>
+{% elif authstate == 'signed-in' %}
+    <p><strong>Signed in</strong> — ready to back up to Proton Drive.</p>
+    {% if accountemail %}
+        <p><strong>Email:</strong> {{ accountemail | escape }}</p>
+    {% endif %}
+    {% if accountorganization %}
+        <p><strong>Organization:</strong> {{ accountorganization | escape }}</p>
+    {% endif %}
+    {% if not accountemail and not accountorganization %}
+        <p>Account details are unavailable.</p>
+    {% endif %}
+{% elif authstate == 'signing-in' %}
+    <p><strong>Waiting for sign-in</strong></p>
+    {% if authurl %}
+        <a class="mat-raised-button mat-primary"
+           href="{{ authurl | escape }}"
+           target="_blank">Sign in at Proton</a>
+        <p>Finish signing in in the new tab, then return here.</p>
+    {% else %}
+        <p>Preparing the Proton sign-in link…</p>
+    {% endif %}
+{% elif authstate == 'signed-out' %}
+    <p><strong>Not signed in</strong></p>
+    <p>Sign in to connect your Proton account. You can configure settings and backup sets first.</p>
+{% elif authstate == 'error' %}
+    <p><strong>Sign-in failed</strong> — try signing in again.</p>
+{% else %}
+    <p><strong>Account status unavailable</strong></p>
+    <p>Check the service and apply pending configuration changes.</p>
+{% endif %}
+{% if autherror %}
+    <p>{{ autherror | escape }}</p>
+{% endif %}

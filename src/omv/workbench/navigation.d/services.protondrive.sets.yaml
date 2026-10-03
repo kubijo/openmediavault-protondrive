@@ -1,0 +1,7 @@
+version: '1.0'
+type: navigation-item
+data:
+  path: services.protondrive.sets
+  text: _("Backup sets")
+  icon: mdi:folder-multiple
+  url: /services/protondrive/sets

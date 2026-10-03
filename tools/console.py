@@ -1,9 +1,13 @@
 """Shared Rich console and subprocess output policy for repository tooling."""
 
 import os
+import re
+import sys
+import traceback
 
 from rich.console import Console
 from rich.text import Text
+from rich.traceback import install as install_rich_traceback
 
 AGENT_ENVS = ('CLAUDECODE', 'CURSOR_AGENT', 'GEMINI_CLI', 'CODEX_THREAD_ID', 'OPENCODE', 'IN_CLANKER', 'in-clanker')
 
@@ -50,6 +54,25 @@ def live_output(console, *, no_color=False, in_clanker=False):
     )
 
 
+def install_traceback(*, no_color=False, in_clanker=False):
+    """Install readable crash reports without dumping credential-bearing locals."""
+    previous = sys.excepthook
+    if plain_output(no_color, in_clanker) or color_disabled(no_color):
+        # Python's default hook can force ANSI independently of our CLI flags.
+        sys.excepthook = traceback.print_exception
+    else:
+        install_rich_traceback(console=new_console(stderr=True), show_locals=False, width=100)
+    return previous
+
+
+def print_exception(*, no_color=False, in_clanker=False):
+    """Render a caught exception using the same policy as unhandled crashes."""
+    if plain_output(no_color, in_clanker) or color_disabled(no_color):
+        traceback.print_exc()
+    else:
+        new_console(stderr=True).print_exception(show_locals=False, width=100)
+
+
 def success(message):
     new_console().print(Text.assemble(('PASS: ', 'bold green'), (message, '')))
 
@@ -58,9 +81,46 @@ def error(message):
     new_console(stderr=True).print(Text.assemble(('ERROR: ', 'bold red'), (message, '')))
 
 
-def child_environment():
+def style_diagnostic(text):
+    """Normalize tool palettes; reserve colour for meaningful status labels."""
+    text = Text(text.plain)
+    line = text.plain.lstrip()
+    offset = len(text.plain) - len(line)
+    for prefix, style in (
+        ('RUN ', 'dim'),
+        ('PASS:', 'bold green'),
+        ('FAILED:', 'bold red'),
+        ('ERROR:', 'bold red'),
+        ('WARNING:', 'yellow'),
+        ('[ERROR', 'bold red'),
+        ('[WARNING', 'yellow'),
+    ):
+        if line.startswith(prefix):
+            text.stylize(style, offset, offset + len(prefix))
+            return text
+
+    # Salt's highstate output uses colour for whole blocks. Highlight its status
+    # values instead, so success, failure and changes have one consistent meaning.
+    if line.startswith(('ID:', 'Summary for ')):
+        text.stylize('bold cyan')
+    elif line.startswith(('Started:', 'Duration:', 'Total states run:', 'Total run time:')):
+        text.stylize('dim')
+    elif result := re.match(r'\s*(Result|Succeeded|Failed):\s*(\S+)', text.plain):
+        label, value = result.groups()
+        if label == 'Result':
+            style = {'True': 'green', 'False': 'bold red', 'None': 'yellow'}.get(value, '')
+        elif value.isdecimal():
+            style = 'dim' if int(value) == 0 else ('bold red' if label == 'Failed' else 'green')
+        else:
+            style = ''
+        text.stylize(style, result.start(2), result.end(2))
+        text.highlight_regex(r'\bchanged=[1-9]\d*', 'yellow')
+    return text
+
+
+def child_environment(*, terminal=False):
     # Captured subprocess diagnostics must remain readable in logs and JSON reports.
-    return {
+    environment = {
         **os.environ,
         'NO_COLOR': '1',
         'FORCE_COLOR': '0',
@@ -72,3 +132,14 @@ def child_environment():
         'GIT_TERMINAL_PROMPT': '0',
         'GH_PROMPT_DISABLED': '1',
     }
+    if terminal:
+        environment.pop('NO_COLOR', None)
+        environment.update(
+            TERM='xterm-256color',
+            FORCE_COLOR='1',
+            CLICOLOR_FORCE='1',
+            UV_COLOR='always',
+            PYTHON_COLORS='1',
+            PY_COLORS='1',
+        )
+    return environment

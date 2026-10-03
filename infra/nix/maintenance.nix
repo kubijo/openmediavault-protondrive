@@ -1,43 +1,12 @@
 {
   pkgs,
+  nix-tools,
   python,
   src,
-  nixToolsRevision,
 }:
 let
   inherit (builtins) toJSON;
   inherit (pkgs) lib;
-  tool = package: repo: {
-    inherit (package) version;
-    inherit repo;
-  };
-  inventory = pkgs.writeText "protondrive-tool-inventory.json" (toJSON {
-    nix-tools-revision = nixToolsRevision;
-    tools = {
-      "Nix (package set)" = tool pkgs.nix "NixOS/nix";
-      "Python (tooling)" = (tool pkgs.python3 "python/cpython") // {
-        tags = true;
-      };
-      uv = tool pkgs.uv "astral-sh/uv";
-      ruff = tool pkgs.ruff "astral-sh/ruff";
-      gitleaks = tool pkgs.gitleaks "gitleaks/gitleaks";
-      deptry = tool pkgs.deptry "fpgmaas/deptry";
-      actionlint = tool pkgs.actionlint "rhysd/actionlint";
-      just = tool pkgs.just "casey/just";
-      nixfmt = tool pkgs.nixfmt "NixOS/nixfmt";
-      statix = tool pkgs.statix "oppiliappan/statix";
-      deadnix = tool pkgs.deadnix "astro/deadnix";
-      shellcheck = tool pkgs.shellcheck "koalaman/shellcheck";
-      shfmt = tool pkgs.shfmt "mvdan/sh";
-      "editorconfig-checker" = tool pkgs.editorconfig-checker "editorconfig-checker/editorconfig-checker";
-      "salt-lint" = tool pkgs.salt-lint "warpnet/salt-lint";
-      mago = tool pkgs.mago "carthage-software/mago";
-      PHP = (tool pkgs.php "php/php-src") // {
-        tags = true;
-      };
-      yamllint = tool pkgs.yamllint "adrienverge/yamllint";
-    };
-  });
   step = name: command: findingCodes: {
     inherit name command findingCodes;
   };
@@ -111,8 +80,85 @@ let
         exec ${python}/bin/python ${src}/tools/${name}.py ${lib.escapeShellArgs args} "$@"
       '';
     };
+  outdatedAdapter = app "outdated" [ pkgs.gh ] [ ];
+  github = package: repo: { inherit package repo; };
+  pypi = package: project: {
+    inherit package project;
+    provider = "pypi";
+  };
 in
 {
-  outdated = app "outdated" [ pkgs.gh ] [ "--inventory" (toString inventory) ];
+  outdated = {
+    enable = true;
+    uv = true;
+    githubActions = true;
+    releases = {
+      nix = (github pkgs.nix "NixOS/nix") // {
+        tags = true;
+      };
+      host-nix = {
+        versionCommand = [
+          "nix"
+          "--version"
+        ];
+        versionPattern = "nix .* (?P<version>[^ ]+)";
+        repo = "NixOS/nix";
+        tags = true;
+      };
+      uv = github pkgs.uv "astral-sh/uv";
+      gitleaks = github pkgs.gitleaks "gitleaks/gitleaks";
+      deptry = github pkgs.deptry "fpgmaas/deptry";
+
+      # Selected tools have explicit sources;
+      # nix-tools does not infer a package-to-upstream mapping
+      # from its formatter or linter configuration.
+      debputy = {
+        package = (nix-tools.lib.packagesFor pkgs).debputy;
+        provider = "git";
+        url = "https://salsa.debian.org/debian/debputy.git";
+        tagPattern = ''(?:archive/)?debian/(?P<version>[0-9]+(?:\.[0-9]+)+)'';
+      };
+      shellcheck = github pkgs.shellcheck "koalaman/shellcheck";
+      actionlint = github pkgs.actionlint "rhysd/actionlint";
+      biome = {
+        package = pkgs.biome;
+        provider = "npm";
+        project = "@biomejs/biome";
+      };
+      deadnix = (github pkgs.deadnix "astro/deadnix") // {
+        tags = true;
+      };
+      djlint = pypi pkgs.djlint "djlint";
+      editorconfig-checker = github pkgs.editorconfig-checker "editorconfig-checker/editorconfig-checker";
+      fd = github pkgs.fd "sharkdp/fd";
+      just = github pkgs.just "casey/just";
+      lychee = {
+        package = pkgs.lychee;
+        provider = "crates";
+        project = "lychee";
+      };
+      mago = github pkgs.mago "carthage-software/mago";
+      mdformat = pypi pkgs.python3Packages.mdformat "mdformat";
+      mdformat-frontmatter = pypi pkgs.python3Packages.mdformat-frontmatter "mdformat-frontmatter";
+      mdformat-gfm = pypi pkgs.python3Packages.mdformat-gfm "mdformat-gfm";
+      mdformat-simple-breaks = pypi pkgs.python3Packages.mdformat-simple-breaks "mdformat-simple-breaks";
+      nixfmt = github pkgs.nixfmt "NixOS/nixfmt";
+      python3 = (github pkgs.python3 "python/cpython") // {
+        tags = true;
+      };
+      ruff = github pkgs.ruff "astral-sh/ruff";
+      salt-lint = pypi pkgs.salt-lint "salt-lint";
+      shfmt = github pkgs.shfmt "mvdan/sh";
+      statix = github pkgs.statix "oppiliappan/statix";
+      taplo = github pkgs.taplo "tamasfe/taplo";
+      treefmt = github pkgs.treefmt "numtide/treefmt";
+      yamlfmt = github pkgs.yamlfmt "google/yamlfmt";
+      yamllint = pypi pkgs.yamllint "yamllint";
+    };
+    adapters.application = {
+      package = outdatedAdapter;
+      timeout = 120;
+    };
+  };
   audit = app "audit" [ pkgs.uv pkgs.gitleaks pkgs.deptry ] [ "--plan" (toString auditPlan) ];
 }

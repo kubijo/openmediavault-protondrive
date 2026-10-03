@@ -2,7 +2,7 @@
   description = "OpenMediaVault plugin for backups to Proton Drive";
 
   inputs = {
-    nix-tools.url = "github:kubijo/nix-tools";
+    nix-tools.url = "github:kubijo/nix-tools/v0.7.1";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -56,15 +56,25 @@
           );
       qaPython = pythonSet.mkVirtualEnv "protondrive-tooling" workspace.deps.default;
       maintenance = import ./infra/nix/maintenance.nix {
-        inherit pkgs;
+        inherit pkgs nix-tools;
         python = qaPython;
         src = self;
-        nixToolsRevision = nix-tools.rev or null;
       };
       qa = import ./infra/nix/qa.nix {
         inherit pkgs;
         python = qaPython;
         src = self;
+      };
+      vmApp = mode: {
+        type = "app";
+        program = pkgs.lib.getExe (
+          import ./infra/nix/test-vm.nix {
+            inherit pkgs mode;
+            python = qaPython;
+            src = self;
+            package = deb;
+          }
+        );
       };
       shellFiles = [
         "*.sh"
@@ -76,6 +86,11 @@
       cli = import ./infra/nix/proton-cli.nix { inherit pkgs; };
       deb = import ./infra/nix/package.nix {
         inherit pkgs cli;
+        python = qaPython;
+        src = self;
+      };
+      webProbe = import ./infra/nix/web-probe.nix {
+        inherit pkgs;
         src = self;
       };
       project = nix-tools.lib.configure {
@@ -95,7 +110,10 @@
           "*.lock"
         ];
         coverage = import ./infra/nix/coverage.nix;
+        inherit (maintenance) outdated;
         format = {
+          css = true;
+          nunjucks.includes = [ "*.html.njk" ];
           python.includes = [
             "*.py"
             "src/bin/omv-protondrive"
@@ -139,6 +157,7 @@
           exclude = [ "LICENSE" ];
         };
         lint = {
+          nunjucks.includes = [ "*.html.njk" ];
           nix = true;
           # actionlint 1.7.12 predates this GA runner label; keep other label errors fatal.
           workflows.extraOptions = [
@@ -155,10 +174,29 @@
           extraCheckers.php-syntax = {
             command = "${pkgs.php}/bin/php";
             options = [ "-l" ];
+            outdated = {
+              package = pkgs.php;
+              repo = "php/php-src";
+              tags = true;
+              tagPattern = ''php-(?P<version>[0-9]+(?:\.[0-9]+)+)'';
+            };
             includes = [
               "*.inc"
               "*.php"
             ];
+          };
+          extraCheckers.css = {
+            command = "${pkgs.biome}/bin/biome";
+            outdated = {
+              package = pkgs.biome;
+              provider = "npm";
+              project = "@biomejs/biome";
+            };
+            options = [
+              "lint"
+              "--error-on-warnings"
+            ];
+            includes = [ "*.css" ];
           };
           salt.exclude = [ "tools/tests/fixtures/templates/invalid/**" ];
           links = true;
@@ -168,13 +206,34 @@
             exclude = [ "LICENSE" ];
           };
           extraProjectCheckers = {
+            vm-branding = {
+              command = pkgs.lib.getExe qa.checkBranding;
+              outdated.skip = "Versioned with this repository";
+            };
             templates = {
               command = "${qaPython}/bin/python";
               options = [ "tools/check_templates.py" ];
+              outdated.skip = "Versioned with this repository";
             };
             just = {
               command = "${pkgs.just}/bin/just";
               options = [ "--summary" ];
+              outdated = {
+                package = pkgs.just;
+                repo = "casey/just";
+              };
+            };
+            guest-recipes = {
+              command = "${pkgs.just}/bin/just";
+              outdated = {
+                package = pkgs.just;
+                repo = "casey/just";
+              };
+              options = [
+                "--justfile"
+                "tests/integration/guest.just"
+                "--summary"
+              ];
             };
           };
         };
@@ -221,10 +280,6 @@
           type = "app";
           program = pkgs.lib.getExe maintenance.audit;
         };
-        outdated = {
-          type = "app";
-          program = pkgs.lib.getExe maintenance.outdated;
-        };
         test = {
           type = "app";
           program = pkgs.lib.getExe qa.test;
@@ -249,16 +304,13 @@
             }
           );
         };
-        test-vm = {
+        test-vm = vmApp "test";
+        vm = vmApp "control";
+        vm-up = vmApp "up";
+        vm-install = vmApp "install";
+        web-probe = {
           type = "app";
-          program = "${
-            import ./infra/nix/test-vm.nix {
-              inherit pkgs;
-              python = qaPython;
-              src = self;
-              package = deb;
-            }
-          }/bin/protondrive-test-vm";
+          program = pkgs.lib.getExe webProbe;
         };
       };
       devShells.${system}.default = pkgs.mkShellNoCC {

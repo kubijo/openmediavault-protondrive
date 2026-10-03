@@ -32,7 +32,6 @@ def wait_for(predicate, message):
 
 
 def fixture_image():
-    run('apt-get', 'install', '-y', '--no-install-recommends', 'busybox-static')
     with io.BytesIO() as data:
         with tarfile.open(fileobj=data, mode='w') as archive:
             archive.add('/bin/busybox', arcname='busybox')

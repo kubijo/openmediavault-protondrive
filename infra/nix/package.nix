@@ -1,5 +1,6 @@
 {
   pkgs,
+  python,
   src,
   cli,
 }:
@@ -12,6 +13,8 @@ let
     "src/protondrive" = "usr/share/openmediavault-protondrive/protondrive";
     "src/omv" = "usr/share/openmediavault";
     "src/salt" = "srv/salt/omv/deploy/protondrive";
+    "src/web/protondrive.css" = "usr/share/openmediavault-protondrive/protondrive.css";
+    "src/nginx/90-protondrive.conf" = "etc/nginx/openmediavault-webgui.d/90-protondrive.conf";
   };
 in
 pkgs.runCommand "openmediavault-protondrive-7.0.0"
@@ -34,6 +37,9 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
     )}
     find package -type d -exec chmod 0755 {} +
     find package -type f -exec chmod 0644 {} +
+    ${python}/bin/python ${src}/tools/build_workbench.py \
+      ${src}/src/omv/workbench ${src}/src/web/templates \
+      package/usr/share/openmediavault/workbench
     find package -name __pycache__ -type d -prune -exec rm -r {} +
     find package -name '*.pyc' -delete
     install -Dm755 ${cli} package/usr/lib/openmediavault-protondrive/proton-drive
@@ -43,6 +49,7 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
       install -m755 debian/openmediavault-protondrive.$script package/DEBIAN/$script
     done
     install -m644 debian/openmediavault-protondrive.triggers package/DEBIAN/triggers
+    printf '%s\n' /etc/nginx/openmediavault-webgui.d/90-protondrive.conf > package/DEBIAN/conffiles
     install -Dm644 debian/openmediavault-protondrive.lintian-overrides package/usr/share/lintian/overrides/openmediavault-protondrive
     docs=package/usr/share/doc/openmediavault-protondrive
     mkdir -p "$docs"
@@ -51,7 +58,7 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
     gzip -n -9 < debian/changelog > "$docs/changelog.gz"
     # Debian's own structured control parser supplies XB fields, version and size.
     dpkg-gencontrol -popenmediavault-protondrive -Ppackage -v7.0.0
-    (cd package; find usr srv -type f -print0 | sort -z | xargs -0 md5sum) > package/DEBIAN/md5sums
+    (cd package; find usr srv etc -type f -print0 | sort -z | xargs -0 md5sum) > package/DEBIAN/md5sums
     find package -exec touch --date="@$SOURCE_DATE_EPOCH" {} +
     dpkg-deb --build --root-owner-group package "$out/openmediavault-protondrive_7.0.0_amd64.deb"
   ''

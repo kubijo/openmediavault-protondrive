@@ -3,5 +3,4 @@ type: route
 data:
   url: /services/protondrive
   title: _("Proton Drive")
-  editing: true
-  component: omv-services-protondrive-status-form-page
+  component: omv-services-protondrive-navigation-page

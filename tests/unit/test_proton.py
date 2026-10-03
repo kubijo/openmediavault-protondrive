@@ -8,6 +8,43 @@ from protondrive.protoncli import ProtonCli, entries, node_result, parse_json
 
 
 class ProtonTests(unittest.TestCase):
+    def test_probe_exposes_only_owner_display_fields(self):
+        config, _ = configuration()
+        cli = ProtonCli(config)
+        root = {
+            'uid': 'private-root-id',
+            'ownedBy': {'email': ' user@example.org ', 'organization': 'Example', 'extra': 'private'},
+        }
+        with patch.object(cli, 'info', return_value=root):
+            self.assertEqual(
+                cli.probe(),
+                {'state': 'signed-in', 'url': '', 'error': '', 'email': 'user@example.org', 'organization': 'Example'},
+            )
+
+    def test_missing_or_malformed_owner_clears_previous_identity(self):
+        config, _ = configuration()
+        cli = ProtonCli(config)
+        for owner in (None, [], {}, {'email': 123, 'organization': {'name': 'unexpected'}}):
+            with self.subTest(owner=owner), patch.object(cli, 'info', return_value={'uid': 'root', 'ownedBy': owner}):
+                cli.auth = {'state': 'signed-in', 'email': 'previous@example.org', 'organization': 'Previous'}
+                status = cli.probe()
+                self.assertEqual(status['state'], 'signed-in')
+                self.assertEqual(status['email'], '')
+                self.assertEqual(status['organization'], '')
+
+    def test_finished_probe_cannot_restore_identity_after_auth_state_changes(self):
+        config, _ = configuration()
+        cli = ProtonCli(config)
+
+        def changed_session(path):
+            cli.auth = {'state': 'signed-out', 'url': '', 'error': ''}
+            return {'uid': 'root', 'ownedBy': {'email': 'previous@example.org'}}
+
+        with patch.object(cli, 'info', side_effect=changed_session):
+            status = cli.probe()
+        self.assertEqual(status['state'], 'signed-out')
+        self.assertEqual(status['email'], '')
+
     def test_multiline_json_with_leading_diagnostic(self):
         self.assertEqual(parse_json('info: [diagnostic]\n[\n{"uid":"one","ok":true}\n]'), [{'uid': 'one', 'ok': True}])
 

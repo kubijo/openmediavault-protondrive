@@ -15,7 +15,7 @@ DEBIAN = json.loads((SOURCE / 'config/sources.json').read_text())['debian-contai
 @dataclass
 class Options:
     package: Path = Path('result/openmediavault-protondrive_7.0.0_amd64.deb')
-    """Built Debian package to test; build it with `just build` first."""
+    """Built Debian package to test; build it with `just app::build` first."""
 
 
 def main(options: Options):

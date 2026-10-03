@@ -7,6 +7,10 @@ remove | purge)
         rm -f "/etc/systemd/system/$unit"
     done
     systemctl daemon-reload 2>/dev/null || true
+    # Refresh the web server after removal of the plugin stylesheet include.
+    # shellcheck disable=SC1091
+    . /usr/share/openmediavault/scripts/helper-functions
+    omv_module_set_dirty nginx
     dpkg-trigger update-workbench
     ;;
 esac

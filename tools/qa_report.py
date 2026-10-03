@@ -4,9 +4,8 @@ import json
 from collections import Counter
 from dataclasses import asdict, dataclass
 
-from console import live_output, new_console, plain_output
+from console import new_console, plain_output
 from rich import box
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -102,63 +101,7 @@ def plain_results(results):
             print('  ' + '\n  '.join(lines), flush=True)
 
 
-class SectionReport:
-    """Print completed sections above a transient list of pending lookups."""
-
-    def __init__(self, totals, *, json_output=False, no_color=False, in_clanker=False):
-        self.json_output = json_output
-        self.console = new_console(no_color=no_color, in_clanker=in_clanker)
-        self.rich = not plain_output(no_color, in_clanker)
-        self.progress = None
-        self.tasks = {}
-        if not json_output and live_output(self.console, no_color=no_color, in_clanker=in_clanker):
-            self.progress = Progress(
-                SpinnerColumn(),
-                TextColumn('{task.description}', markup=False),
-                TextColumn('{task.completed:.0f}/{task.total:.0f}'),
-                console=self.console,
-                transient=True,
-                refresh_per_second=8,
-            )
-            self.tasks = {domain: self.progress.add_task(domain, total=total) for domain, total in totals.items()}
-
-    def __enter__(self):
-        if self.progress:
-            self.progress.start()
-        return self
-
-    def __exit__(self, *_exc):
-        if self.progress:
-            self.progress.stop()
-
-    def advance(self, domain):
-        if self.progress:
-            self.progress.advance(self.tasks[domain])
-
-    def section_ready(self, domain, components):
-        if self.progress:
-            self.progress.remove_task(self.tasks.pop(domain))
-            self.progress.refresh()
-        if self.json_output:
-            return
-        if self.rich:
-            rich_section(self.console, domain, components)
-        else:
-            plain_results(components)
-
-    def finish(self, results):
-        if self.json_output:
-            return report(results, json_output=True)
-        state, code, counts = summary(results)
-        count_text = ', '.join(f'{n} {s}' for s, n in counts.items())
-        if self.rich:
-            rich_summary(self.console, 'OUTDATED CHECK', state, count_text)
-        else:
-            print(f'\nOUTDATED CHECK: {state} ({count_text})', flush=True)
-        return code
-
-
-def summary(results, audit=False):
+def summary(results):
     counts = dict(sorted(Counter(result.state for result in results).items()))
     if not results or counts.get('error') or counts.get('unknown'):
         return 'ERROR', 2, counts
@@ -166,14 +109,12 @@ def summary(results, audit=False):
         return 'BLOCKED', 2, counts
     if counts.get('failed'):
         return 'FAILED', 1, counts
-    if counts.get('outdated'):
-        return 'OUTDATED', 1, counts
-    return ('PASSED' if audit else 'UP-TO-DATE'), 0, counts
+    return 'PASSED', 0, counts
 
 
-def report(results, *, audit=False, json_output=False, no_color=False, in_clanker=False):
-    state, code, counts = summary(results, audit)
-    label = 'AUDIT' if audit else 'OUTDATED CHECK'
+def report(results, *, json_output=False, no_color=False, in_clanker=False):
+    state, code, counts = summary(results)
+    label = 'AUDIT'
     count_text = ', '.join(f'{n} {s}' for s, n in counts.items())
     if json_output:
         print(json.dumps({'state': state, 'counts': counts, 'components': [asdict(r) for r in results]}, indent=2))

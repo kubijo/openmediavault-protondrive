@@ -1,0 +1,19 @@
+<h3 class="protondrive-status-heading omv-mt-z">Backup</h3>
+{% if authstate == 'loading' %}
+    <p>Loading backup status…</p>
+{% else %}
+    <p><strong>{{ 'Running' if running else 'Not running' }}</strong></p>
+    {% if phase and phase != 'idle' %}
+        <p>Last reported phase: {{ phase | escape }}</p>
+    {% endif %}
+    <p>Last successful backup: {{ (lastsuccess or 'No successful backup yet') | escape }}</p>
+    {% if error %}
+        <p><strong>Last backup error:</strong> {{ error | escape }}</p>
+    {% endif %}
+    {% if details and details != '{}' %}
+        <details>
+            <summary>Last run details</summary>
+            <pre>{{ details | escape }}</pre>
+        </details>
+    {% endif %}
+{% endif %}

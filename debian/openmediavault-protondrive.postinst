@@ -14,6 +14,7 @@ configure)
         omv-confdbadm migrate conf.service.protondrive "$2"
     fi
     omv_module_set_dirty protondrive
+    omv_module_set_dirty nginx
     dpkg-trigger update-workbench
     ;;
 abort-upgrade | abort-remove | abort-deconfigure) ;;

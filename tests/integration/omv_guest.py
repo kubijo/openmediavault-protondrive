@@ -30,32 +30,6 @@ def main(package: Path):
     os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
     Path('/data/test-tmp').mkdir(parents=True, exist_ok=True)
     os.environ['TMPDIR'] = '/data/test-tmp'
-    run('apt-get', 'update', '-qq')
-    run('apt-get', 'install', '-y', '--no-install-recommends', 'wget', 'gnupg', 'ca-certificates')
-    run(
-        'wget',
-        '-qO',
-        '/usr/share/keyrings/openmediavault.asc',
-        'https://packages.openmediavault.org/public/archive.key',
-    )
-    Path('/etc/apt/sources.list.d/openmediavault.list').write_text(
-        'deb [signed-by=/usr/share/keyrings/openmediavault.asc] https://packages.openmediavault.org/public sandworm main\n'
-    )
-    run('apt-get', 'update', '-qq')
-    run(
-        'apt-get',
-        'install',
-        '-y',
-        '--no-install-recommends',
-        'openmediavault',
-        'docker.io',
-        'acl',
-        'attr',
-        'python3-jinja2',
-        'python3-yaml',
-        'lintian',
-    )
-    run('omv-confdbadm', 'populate')
     # Also permits diagnosis using a stopped guest image from an earlier failed run.
     installed = subprocess.run(
         ['dpkg-query', '-W', 'openmediavault-protondrive'],

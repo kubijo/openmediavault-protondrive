@@ -1,0 +1,54 @@
+/* Applied only by the interactive VM harness, never shipped in the plugin. */
+body:has(#omv-test-banner) {
+    box-sizing: border-box;
+    padding-top: 56px;
+}
+
+#omv-test-banner {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 10000;
+    box-sizing: border-box;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 24px;
+    background: #fbbf24;
+    color: #171923;
+    border-bottom: 4px solid #d97706;
+    font:
+        600 14px / 1.4 system-ui,
+        sans-serif;
+}
+
+#omv-test-banner strong {
+    font-size: 18px;
+    letter-spacing: 0.08em;
+}
+
+body:has(#omv-test-banner) omv-login-page .background,
+body:has(#omv-test-banner) omv-login-page omv-green-rain {
+    display: none;
+}
+
+body:has(#omv-test-banner) omv-login-page > div {
+    background: radial-gradient(ellipse at top, #43351c, #111827 70%);
+}
+
+body:has(#omv-test-banner) .mat-toolbar {
+    background: #292524;
+}
+
+@media (max-width: 600px) {
+    #omv-test-banner {
+        gap: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    #omv-test-banner strong {
+        font-size: 14px;
+    }
+}

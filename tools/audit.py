@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tyro
-from console import child_environment
+from console import child_environment, install_traceback
 from qa_report import Result, report
 
 
@@ -56,14 +56,13 @@ def run_step(step, root):
 
 
 def main(options: Options):
+    install_traceback(no_color=options.no_color, in_clanker=options.in_clanker or options.json)
     try:
         steps = json.loads(options.plan.read_text())
         results = [run_step(step, options.root.resolve()) for step in steps]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         results = [Result('audit configuration', 'error', detail=str(exc))]
-    return report(
-        results, audit=True, json_output=options.json, no_color=options.no_color, in_clanker=options.in_clanker
-    )
+    return report(results, json_output=options.json, no_color=options.no_color, in_clanker=options.in_clanker)
 
 
 if __name__ == '__main__':

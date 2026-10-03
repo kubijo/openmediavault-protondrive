@@ -2,16 +2,19 @@ let
   runtimeTests = {
     includes = [
       "src/protondrive/*.py"
+      "src/web/templates/*.njk"
       "tests/unit/*.py"
       "tests/fixtures/fake_proton_auth.py"
+      "tests/integration/vm.py"
+      "tests/integration/provision_guest.py"
+      "tests/integration/interactive_guest.py"
+      "tests/integration/interactive-vm.css"
+      "tools/*.py"
       "tools/tests/*.py"
-      "tools/tests/fixtures/templates/**"
-      "tools/audit.py"
-      "tools/check_templates.py"
-      "tools/console.py"
-      "tools/outdated.py"
-      "tools/qa_report.py"
+      "tools/tests/fixtures/**"
     ];
+    # The tracked-source gate runs separately and has no unit tests.
+    exclude = [ "tools/check_tracked.py" ];
     kind = "test";
     description = "Runtime and tooling unit suites; guest-only tests are not claimed here";
   };
@@ -22,7 +25,16 @@ in
     "lint"
   ];
   checkerKinds.php-syntax = "syntax";
+  checkerKinds.css = "semantic";
   projectChecks = {
+    "lint:vm-branding" = {
+      includes = [
+        "tools/tests/fixtures/nginx.conf"
+        "src/nginx/*.conf"
+      ];
+      kind = "syntax";
+      description = "Nginx validates plugin stylesheet and VM branding includes with the test server configuration";
+    };
     "lint:templates" = {
       includes = [
         "src/salt/**/*.sls"
@@ -30,9 +42,10 @@ in
         "src/salt/**/*.jinja"
         "src/omv/datamodels/*.json"
         "src/omv/workbench/**/*.yaml"
+        "src/web/templates/*.njk"
       ];
       kind = "semantic";
-      description = "Strict rendering, Salt/JSON and unit INI syntax, timer assertions, models and workbench references";
+      description = "Strict rendering, Salt/JSON and unit INI syntax, timer assertions, models, workbench assembly and template syntax";
     };
     "lint:just" = {
       includes = [
@@ -40,7 +53,12 @@ in
         "tools/just/*.just"
       ];
       kind = "syntax";
-      description = "Parse recipes and imported fragments with just";
+      description = "Parse recipes, modules, and the shared prelude with just";
+    };
+    "lint:guest-recipes" = {
+      includes = [ "tests/integration/guest.just" ];
+      kind = "syntax";
+      description = "Parse the standalone guest recipes with just";
     };
     "validate:Tracked source" = {
       includes = [ "*" ];

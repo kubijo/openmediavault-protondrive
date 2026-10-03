@@ -26,14 +26,14 @@ class ArchiveTests(unittest.TestCase):
         self.roundtrip(0o750)
 
     @unittest.skipIf(
-        bool(os.environ.get('PROTON_HERMETIC_TESTS')), 'Nix sandbox forbids setgid; exercised by just test'
+        bool(os.environ.get('PROTON_HERMETIC_TESTS')), 'Nix sandbox forbids setgid; exercised by just test::unit'
     )
     @unittest.skipUnless(shutil.which('zstd') and shutil.which('tar'), 'tar/zstd required')
     def test_restore_setgid(self):
         self.roundtrip(0o2750)
 
     @unittest.skipIf(
-        bool(os.environ.get('PROTON_HERMETIC_TESTS')), 'Nix sandbox has no user xattrs; exercised by just test'
+        bool(os.environ.get('PROTON_HERMETIC_TESTS')), 'Nix sandbox has no user xattrs; exercised by just test::unit'
     )
     @unittest.skipUnless(shutil.which('zstd') and shutil.which('tar'), 'tar/zstd required')
     def test_restore_extended_metadata(self):

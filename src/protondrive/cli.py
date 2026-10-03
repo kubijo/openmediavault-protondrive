@@ -104,7 +104,13 @@ def main():
                 'url': '',
                 'error': 'Apply the plugin configuration to start the Proton service',
             }
-        value = {'authstate': auth['state'], 'authurl': auth['url'], 'autherror': auth['error']}
+        value = {
+            'authstate': auth['state'],
+            'authurl': auth['url'],
+            'autherror': auth['error'],
+            'accountemail': auth.get('email', ''),
+            'accountorganization': auth.get('organization', ''),
+        }
         if args.command == 'status':
             value.update(phase='idle', lastsuccess='', error='', sets={})
             if (STATE / 'status.json').exists():

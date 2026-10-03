@@ -71,7 +71,7 @@ jobs:
       - name: Allow the runner to use KVM
         run: sudo chmod a+rw /dev/kvm
       - name: Test OMV installation, recovery and backup restore
-        run: nix run --no-write-lock-file .#test-vm
+        run: nix run --no-write-lock-file .#test-vm -- --no-cache
       - name: Upload VM logs
         if: always()
         uses: actions/upload-artifact@v7

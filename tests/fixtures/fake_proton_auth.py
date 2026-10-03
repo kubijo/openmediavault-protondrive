@@ -15,7 +15,9 @@ def main():
             print('https://account.proton.me/desktop/login?app=drive#payload=TEST', flush=True)
             time.sleep(settings['delay'])
         case ['filesystem', 'info']:
-            print(json.dumps({'uid': 'root'}))
+            print(json.dumps({'uid': 'root', 'ownedBy': {'email': 'test@example.org', 'organization': 'Test team'}}))
+        case ['auth', 'logout']:
+            pass
         case _:
             sys.exit('Unsupported fixture command')
 

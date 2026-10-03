@@ -126,12 +126,23 @@ class ProtonCli:
         return value
 
     def probe(self):
-        self.info('/my-files')
-        self.auth = {'state': 'signed-in', 'url': '', 'error': ''}
-        return dict(self.auth)
+        previous = self.auth
+        root = self.info('/my-files')
+        owner = root.get('ownedBy')
+        owner = owner if isinstance(owner, dict) else {}
+        # Publish only display metadata, never the complete CLI response.
+        identity = {
+            field: owner[field].strip() if isinstance(owner.get(field), str) else ''
+            for field in ('email', 'organization')
+        }
+        with self.state_lock:
+            # A completed probe must not restore identity after logout/cancellation.
+            if self.auth is previous:
+                self.auth = {'state': 'signed-in', 'url': '', 'error': '', **identity}
+            return self.status()
 
     def status(self):
-        return dict(self.auth)
+        return {'email': '', 'organization': '', **self.auth}
 
     def list(self, path):
         return entries(self._run(['filesystem', 'list', path]))

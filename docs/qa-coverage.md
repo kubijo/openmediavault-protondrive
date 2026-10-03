@@ -1,6 +1,6 @@
 # QA coverage
 
-`just validate` checks formatting, lint, tracked source, host and hermetic tests, and package assembly.
+`just dev::validate` checks formatting, lint, tracked source, host and hermetic tests, and package assembly.
 `nix run .#coverage -- --check` audits tracked-file selection and declared scope; it does not execute checks.
 [CI](../.github/workflows/ci.yml) also runs the [audit](maintenance.md) and Debian integration on pushes and PRs; OMV VM
 tests run weekly or manually. Local commands and CI use the same published nix-tools pin.
@@ -11,7 +11,7 @@ tests run weekly or manually. Local commands and CI use the same published nix-t
 | Nix                       | nixfmt          | statix, deadnix; flake checks and package build         |
 | PHP `.inc`                | Mago            | Mago semantics, PHP syntax; OMV RPC in VM               |
 | Shell, maintainer scripts | shfmt           | shellcheck; guest installation and session lifecycle    |
-| Workbench YAML            | yamlfmt         | yamllint; route references and workbench compilation    |
+| Workbench YAML            | yamlfmt         | yamllint; form loading routes; references; compilation  |
 | Datamodel, editor JSON    | Biome           | Parsing; config tests; OMV database and RPC             |
 | Salt, Jinja               | Whitespace only | salt-lint; strict rendering; deployment and units in VM |
 | Systemd test override     | Whitespace only | VM recovery tests                                       |
@@ -22,7 +22,7 @@ tests run weekly or manually. Local commands and CI use the same published nix-t
 | `.editorconfig`           | Whitespace only | editorconfig-checker                                    |
 | CI workflow               | yamlfmt         | yamllint, actionlint, shellcheck                        |
 
-Just recipes and imports are formatted by just and checked by its parser.
+Just modules, recipes, and the shared prelude are formatted by just and checked by its parser.
 
 Whitespace-only formatting uses an explicit EditorConfig policy. Salt/Jinja have no semantic formatter; salt-lint rule
 205 is exempted only for Jinja extensions. Rendered JSON, YAML and unit INI syntax are checked locally; systemd

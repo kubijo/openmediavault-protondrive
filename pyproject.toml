@@ -16,8 +16,30 @@ package = false
 cache-dir = ".tmp/ruff_cache"
 
 [tool.deptry]
-known_first_party = ["protondrive", "helpers", "console", "qa_report", "outdated", "audit"]
+known_first_party = [
+    "protondrive",
+    "helpers",
+    "console",
+    "qa_report",
+    "outdated",
+    "audit",
+    "process_output",
+    "process_signals",
+    "vm_cache",
+    "vm_runtime",
+    "vm_control",
+    "vm_banner",
+    "vm_flow",
+    "interactive_vm",
+    "interactive_guest",
+    "build_workbench",
+    "test_vm_cache",
+]
 extend_exclude = [".tmp", "result"]
+
+[tool.deptry.per_rule_ignores]
+# The browser probe runs in its own Nix app, which supplies Playwright separately.
+DEP001 = ["playwright"]
 
 [tool.deptry.package_module_name_map]
 jinja2 = "jinja2"

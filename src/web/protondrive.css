@@ -1,0 +1,100 @@
+/* Keep the overview compact without changing other OMV forms. */
+omv-intuition-form form:has(.protondrive-status-heading) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 16px;
+    margin-top: 24px;
+}
+
+/* OMV emits empty paragraph wrappers for hidden status fields. */
+omv-intuition-form form:has(.protondrive-status-heading) > p:empty {
+    display: none;
+}
+
+omv-intuition-form form > p:has(.protondrive-status-heading) {
+    display: flex;
+    min-width: 0;
+    margin: 0;
+}
+
+/* Use one full-card surface, with contrast derived from the active OMV theme. */
+omv-form-card > div > mat-card.mat-card:not([class*="mat-elevation-z"]):has(.protondrive-status-heading) {
+    min-width: 0;
+    padding: 20px;
+    background-color: var(--mat-background-color-background);
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+/* Templates provide HTML structure; source indentation is not display content. */
+omv-form-card .omv-text-wrap:has(> .protondrive-status-heading) {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+}
+
+omv-form-card .protondrive-status-heading {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.03em;
+    opacity: 0.7;
+}
+
+omv-form-card .protondrive-status-heading + p {
+    font-size: 16px;
+}
+
+omv-form-card .omv-text-wrap:has(> .protondrive-status-heading) > p {
+    margin: 8px 0 0;
+}
+
+omv-form-card .omv-text-wrap:has(> .protondrive-status-heading) details {
+    margin-top: 16px;
+}
+
+omv-form-card .omv-text-wrap:has(> .protondrive-status-heading) summary {
+    cursor: pointer;
+}
+
+omv-form-card .omv-text-wrap:has(> .protondrive-status-heading) pre {
+    overflow-x: auto;
+}
+
+/* OMV's form footer is a single flex row unless wrapping is enabled. */
+omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 20px;
+}
+
+omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button {
+    flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+    omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions {
+        align-items: stretch;
+    }
+
+    omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button {
+        /* OMV keeps an 8px button margin; allow for it and the footer gap. */
+        flex: 1 1 calc(50% - 20px);
+        min-width: 0;
+        height: auto;
+        min-height: 40px;
+        padding: 0 4px;
+        white-space: normal;
+    }
+
+    omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button:disabled {
+        display: none;
+    }
+
+    omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button:last-child {
+        flex-basis: 100%;
+    }
+}
