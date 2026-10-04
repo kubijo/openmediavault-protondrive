@@ -52,16 +52,16 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1791023463,
-        "narHash": "sha256-+zkDwTqoEUnhLiNfTdr6b4A3/hMa5GQH/ET5ljL1cFI=",
+        "lastModified": 1791058745,
+        "narHash": "sha256-XWjvSewc7Vk9NrhO45jZ4leYx9Se3/DXBgeZq6tQqyE=",
         "owner": "kubijo",
         "repo": "nix-tools",
-        "rev": "8b68a8fc9c73a5be3202b79097730f51bf2398b8",
+        "rev": "0dfac45783879c9ab1cb13740083fe1c903c8964",
         "type": "github"
       },
       "original": {
         "owner": "kubijo",
-        "ref": "v0.7.1",
+        "ref": "v0.7.2",
         "repo": "nix-tools",
         "type": "github"
       }

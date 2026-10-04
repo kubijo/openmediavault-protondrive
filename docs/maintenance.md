@@ -1,6 +1,6 @@
 # Dependency reporting and audits
 
-Use the published nix-tools v0.7.1 pin from `flake.lock`:
+Use the published nix-tools v0.7.2 pin from `flake.lock`:
 
 ```sh
 just dev::outdated
@@ -14,12 +14,12 @@ Review findings before choosing upgrades. Network and registry failures are erro
 
 ## Version report
 
-The `outdated` app comes entirely from `nix-tools.lib.configure`. Its built-in providers read Nix inputs, `uv.lock` and
-GitHub Actions. `infra/nix/maintenance.nix` declares explicit release sources for standalone tools and discovers the
-host Nix version at report time. Custom checkers declare their own release metadata or a reason to skip. nix-tools does
-not infer upstream projects from package names or include a formatter/linter package catalogue. This repository has no
-Cargo, npm, pnpm, Yarn or Composer inventories, so those providers remain disabled. Like the previous checker, UV reads
-locked Python packages, not a developer's `.venv`.
+The `outdated` app comes entirely from `nix-tools.lib.configure`. Its built-in providers read Nix inputs, `uv.lock`,
+`tools/web-probe/pnpm-lock.yaml` and GitHub Actions. `infra/nix/maintenance.nix` declares explicit release sources for
+standalone tools and discovers the host Nix version at report time. Custom checkers declare their own release metadata
+or a reason to skip. nix-tools does not infer upstream projects from package names or include a formatter/linter package
+catalogue. This repository has no Cargo, npm, Yarn or Composer inventories, so those providers remain disabled. Like the
+previous checker, UV reads locked Python packages, not a developer's `.venv`.
 
 The debputy release entry gets its current version from `(nix-tools.lib.packagesFor pkgs).debputy`, the same locally
 packaged derivation used by the configured Debian formatter and checker. Its upstream Git source remains explicit.

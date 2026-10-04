@@ -19,19 +19,24 @@ data:
       - name: _("Enabled")
         prop: enable
         cellTemplateName: checkIcon
+        headerClass: protondrive-sets-column
         flexGrow: 1
       - name: _("Name")
         prop: name
         sortable: true
+        headerClass: protondrive-sets-column
         flexGrow: 1
       - name: _("Sources")
         prop: paths
-        flexGrow: 3
+        headerClass: protondrive-sets-column
+        flexGrow: 2
       - name: _("Local copies")
         prop: localkeep
+        headerClass: protondrive-sets-column
         flexGrow: 1
       - name: _("Remote copies")
         prop: remotekeep
+        headerClass: protondrive-sets-column
         flexGrow: 1
     actions:
       - template: create

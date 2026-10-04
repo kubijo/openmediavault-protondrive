@@ -2,7 +2,7 @@
   description = "OpenMediaVault plugin for backups to Proton Drive";
 
   inputs = {
-    nix-tools.url = "github:kubijo/nix-tools/v0.7.1";
+    nix-tools.url = "github:kubijo/nix-tools/v0.7.2";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -96,6 +96,7 @@
       project = nix-tools.lib.configure {
         inherit system;
         toolPkgs = pkgs;
+        nodejs = pkgs.nodejs_latest;
         src = self;
         exclude = [
           ".tmp/**"
@@ -114,6 +115,7 @@
         format = {
           css = true;
           nunjucks.includes = [ "*.html.njk" ];
+          typescript.includes = [ "*.ts" ];
           python.includes = [
             "*.py"
             "src/bin/omv-protondrive"
@@ -139,6 +141,7 @@
               "debian/source/format"
               ".editorconfig"
               ".gitignore"
+              "**/.gitignore"
               "flake.lock"
               "uv.lock"
             ];
@@ -158,6 +161,7 @@
         };
         lint = {
           nunjucks.includes = [ "*.html.njk" ];
+          typescript.includes = [ "*.ts" ];
           nix = true;
           # actionlint 1.7.12 predates this GA runner label; keep other label errors fatal.
           workflows.extraOptions = [
@@ -259,6 +263,10 @@
             run = "test -e ${qa.hermeticTests}";
           }
           {
+            name = "Web probe TypeScript";
+            run = "test -f ${webProbe.checked}/lib/web-probe/src/main.ts";
+          }
+          {
             name = "Debian package";
             run = "test -f ${deb}/openmediavault-protondrive_7.0.0_amd64.deb";
           }
@@ -274,6 +282,7 @@
       };
       checks.${system} = project.checks // {
         tests = qa.hermeticTests;
+        web-probe-types = webProbe.checked;
       };
       apps.${system} = project.apps // {
         audit = {
@@ -310,7 +319,7 @@
         vm-install = vmApp "install";
         web-probe = {
           type = "app";
-          program = pkgs.lib.getExe webProbe;
+          program = pkgs.lib.getExe webProbe.probe;
         };
       };
       devShells.${system}.default = pkgs.mkShellNoCC {
@@ -329,6 +338,7 @@
             pkgs.acl
             pkgs.dpkg
             pkgs.php
+            pkgs.pnpm
           ];
       };
     };

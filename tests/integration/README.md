@@ -76,8 +76,8 @@ shell without reinstalling the plugin. Stop it before changing forwarded ports.
 
 For automation, `just vm::up --no-shell` returns once the daemon is ready. `just vm::probe` drives a separate Nix-pinned
 Chromium against the local web URL, logs in, checks the overview footer at desktop/420px/320px widths, opens Settings
-and Backup sets, rejects browser exceptions, and saves nine screenshots under ignored `.tmp/web-probe/`. Use `--url` for
-an alternate forwarded port, `--output` for a separate screenshot directory, `--headed` for visible debugging, and
+and Backup sets, rejects browser exceptions, and saves eleven screenshots under ignored `.tmp/web-probe/`. Use `--url`
+for an alternate forwarded port, `--output` for a separate screenshot directory, `--headed` for visible debugging, and
 `--json` for machine-readable results. `--expect-hour` asserts a saved schedule value. `--change-hour` changes that
 value through the web form and verifies it survives reload; use that only with a disposable VM state.
 

@@ -91,6 +91,7 @@ in
   outdated = {
     enable = true;
     uv = true;
+    pnpm.root = "tools/web-probe";
     githubActions = true;
     releases = {
       nix = (github pkgs.nix "NixOS/nix") // {

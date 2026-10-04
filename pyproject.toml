@@ -37,10 +37,6 @@ known_first_party = [
 ]
 extend_exclude = [".tmp", "result"]
 
-[tool.deptry.per_rule_ignores]
-# The browser probe runs in its own Nix app, which supplies Playwright separately.
-DEP001 = ["playwright"]
-
 [tool.deptry.package_module_name_map]
 jinja2 = "jinja2"
 pyyaml = "yaml"

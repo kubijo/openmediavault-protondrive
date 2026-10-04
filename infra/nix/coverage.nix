@@ -80,6 +80,11 @@ in
       kind = "unspecified";
       description = "Aggregate gate; file scope comes from the individual lint checkers";
     };
+    "validate:Web probe TypeScript" = {
+      includes = [ "tools/web-probe/src/*.ts" ];
+      kind = "semantic";
+      description = "Pinned TypeScript compiler checks the browser probe with strict types";
+    };
     "validate:Debian package" = {
       includes = [
         "debian/control"
@@ -107,6 +112,14 @@ in
       ];
       stages = [ "lint" ];
       reason = "Generated locks consumed by Nix and uv2nix; whitespace remains checked, dependency audits run separately";
+    }
+    {
+      includes = [ "tools/web-probe/pnpm-lock.yaml" ];
+      stages = [
+        "format"
+        "lint"
+      ];
+      reason = "pnpm 12 generates a multi-document lockfile; a frozen install validates it during the web-probe type check";
     }
     {
       includes = [

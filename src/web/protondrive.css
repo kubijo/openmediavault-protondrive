@@ -98,3 +98,37 @@ omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-a
         flex-basis: 100%;
     }
 }
+
+/* Keep the five backup-set columns readable whenever their container narrows. */
+omv-intuition-datatable-page:has(.protondrive-sets-column) omv-datatable {
+    display: block;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+omv-intuition-datatable-page:has(.protondrive-sets-column) ngx-datatable {
+    min-width: 720px;
+}
+
+omv-intuition-datatable-page:has(.protondrive-sets-column) .action-toolbar {
+    left: 0;
+    z-index: 1;
+}
+
+@media (max-width: 700px) {
+    omv-intuition-datatable-page:has(.protondrive-sets-column) .action-toolbar .mat-toolbar {
+        height: auto;
+        min-height: 56px;
+        flex-wrap: wrap;
+        padding: 4px;
+    }
+
+    omv-intuition-datatable-page:has(.protondrive-sets-column) .action-toolbar .mat-toolbar > div {
+        flex: 1 1 160px;
+        min-width: 0;
+    }
+
+    omv-intuition-datatable-page:has(.protondrive-sets-column) .action-toolbar mat-form-field {
+        width: 100%;
+    }
+}
