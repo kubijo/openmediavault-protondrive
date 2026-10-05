@@ -4,15 +4,16 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
+if __package__:
+    from .guest_support import decode, items, mapping, run, string
+else:
+    from guest_support import decode, items, mapping, run, string
 
-def run(*args: str, **kwargs):
-    print('RUN', args, flush=True)
-    return subprocess.run(args, check=True, **kwargs)
 
-
-def rpc(method: str, params=None):
+def rpc(method: str, params: Mapping[str, object] | None = None) -> dict[str, object]:
     result = subprocess.run(
         ['omv-rpc', '-u', 'admin', 'ProtonDrive', method, json.dumps(params or {})],
         capture_output=True,
@@ -21,7 +22,7 @@ def rpc(method: str, params=None):
     )
     if result.returncode:
         raise RuntimeError(f'RPC {method} failed: {result.stdout} {result.stderr}')
-    return json.loads(result.stdout)
+    return decode(result.stdout)
 
 
 def main(package: Path):
@@ -51,12 +52,12 @@ def main(package: Path):
         '-s',
         '/src/tests/unit',
         '-v',
-        env={**os.environ, 'PYTHONPATH': '/usr/share/openmediavault-protondrive:/src/tests/unit'},
+        env={**os.environ, 'PYTHONPATH': '/usr/share/openmediavault-protondrive:/src'},
     )
     settings = rpc('get')
     assert not settings['enable']
     sets = rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'})
-    assert {entry['name'] for entry in sets['data']} == {'system', 'appData'}, sets
+    assert {string(mapping(entry)['name']) for entry in items(sets['data'])} == {'system', 'appData'}, sets
     rpc('set', settings)
     assert rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'}) == sets
     for _ in range(2):

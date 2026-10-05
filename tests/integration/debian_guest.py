@@ -6,16 +6,18 @@ import os
 import signal
 import subprocess
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+
+if __package__:
+    from .guest_support import decode, mapping, run
+else:
+    from guest_support import decode, mapping, run
 
 SOURCE = Path('/src')
 STATE = Path('/var/lib/openmediavault-protondrive')
 SOCKET = Path('/run/omv-protondrive/control.sock')
-
-
-def run(*args: str, **kwargs):
-    return subprocess.run(args, check=True, **kwargs)
 
 
 def install_dependencies():
@@ -54,7 +56,10 @@ def configure_session():
     for path in (STATE / 'proton', SOCKET.parent):
         run('install', '-d', '-o', 'protondrive', '-g', 'protondrive', '-m', '0700', str(path))
     model = SOURCE / 'src/omv/datamodels/conf.service.protondrive.json'
-    config = {key: value.get('default', '') for key, value in json.loads(model.read_text())['properties'].items()}
+    config = {
+        key: mapping(value).get('default', '')
+        for key, value in mapping(decode(model.read_text())['properties']).items()
+    }
     config.update(instanceuuid='a0000000-0000-4000-8000-000000000001', sets=[])
     target = Path('/etc/openmediavault/protondrive.json')
     target.parent.mkdir(exist_ok=True)
@@ -64,7 +69,7 @@ def configure_session():
 
 
 @contextmanager
-def private_session():
+def private_session() -> Generator[None, None, None]:
     SOCKET.unlink(missing_ok=True)
     with (
         Path('/tmp/proton-session.log').open('w') as log,

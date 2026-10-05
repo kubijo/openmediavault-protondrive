@@ -1,11 +1,15 @@
 """Exercise the installed runner/daemon with real archives and a fake remote backend."""
 
-import json
 import os
 import shutil
 import subprocess
 import time
 from pathlib import Path
+
+if __package__:
+    from .guest_support import decode, items, mapping, run
+else:
+    from guest_support import decode, items, mapping, run
 
 from omv_guest import rpc
 
@@ -13,10 +17,6 @@ STATE = Path('/var/lib/openmediavault-protondrive')
 REMOTE = STATE / 'proton/fake-remote/my-files'
 BINARY = Path('/usr/lib/openmediavault-protondrive/proton-drive')
 BACKUP = 'omv-protondrive-backup.service'
-
-
-def run(*args: str, **kwargs):
-    return subprocess.run(args, check=True, **kwargs)
 
 
 def configure():
@@ -30,7 +30,8 @@ def configure():
     (data / 'cache').mkdir()
     (data / 'cache/ignored').touch()
     sets = rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'})['data']
-    for item in sets:
+    for raw in items(sets):
+        item = mapping(raw)
         item['enable'] = item['name'] == 'appData'
         if item['enable']:
             item.update(paths=str(data), excludes='cache', localkeep=1, remotekeep=1)
@@ -41,7 +42,7 @@ def configure():
 def run_backup():
     subprocess.run(['systemctl', 'reset-failed', BACKUP], check=False)
     run('systemctl', 'start', BACKUP)
-    assert json.loads((STATE / 'status.json').read_text())['phase'] == 'completed'
+    assert decode((STATE / 'status.json').read_text())['phase'] == 'completed'
 
 
 def main():

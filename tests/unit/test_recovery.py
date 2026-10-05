@@ -16,9 +16,9 @@ class RecoveryTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.state = Path(self.temp.name)
         self.running = {A: True, B: True, 'c' * 64: False}
-        self.calls = []
+        self.calls: list[tuple[str, ...]] = []
 
-    def docker(self, *args):
+    def docker(self, *args: str) -> str:
         self.calls.append(args)
         if args[0] == 'ps':
             return A + '\n' + B + '\n'
@@ -42,7 +42,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(recovery.path.exists())
 
     def test_partial_stop_failure_is_recoverable_by_new_process(self):
-        def fail(*args):
+        def fail(*args: str) -> str:
             if args[0] == 'stop' and args[-1] == B:
                 raise BackupError('Docker unavailable')
             return self.docker(*args)
@@ -59,7 +59,7 @@ class RecoveryTests(unittest.TestCase):
         recovery = Recovery(self.state, self.docker)
         recovery.stop(1)
 
-        def fail(*args):
+        def fail(*args: str) -> str:
             if args[0] == 'start' and args[-1] == B:
                 raise BackupError('start failed')
             return self.docker(*args)

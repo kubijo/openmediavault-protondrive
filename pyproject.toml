@@ -14,27 +14,23 @@ package = false
 
 [tool.ruff]
 cache-dir = ".tmp/ruff_cache"
+line-length = 120
+src = ["src", "tools", "tools/tests", "tests/unit", "tests/integration"]
+target-version = "py311" # Guest code must remain valid on Debian's Python 3.11.
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.basedpyright]
+extraPaths = ["src", "tools", "tools/tests", "tests/unit", "tests/integration"]
+typeCheckingMode = "strict"
+reportAny = "error"
+reportExplicitAny = "error"
+strictGenericNarrowing = true
+pythonVersion = "3.11"
+pythonPlatform = "Linux"
 
 [tool.deptry]
-known_first_party = [
-    "protondrive",
-    "helpers",
-    "console",
-    "qa_report",
-    "outdated",
-    "audit",
-    "process_output",
-    "process_signals",
-    "vm_cache",
-    "vm_runtime",
-    "vm_control",
-    "vm_banner",
-    "vm_flow",
-    "interactive_vm",
-    "interactive_guest",
-    "build_workbench",
-    "test_vm_cache",
-]
 extend_exclude = [".tmp", "result"]
 
 [tool.deptry.package_module_name_map]

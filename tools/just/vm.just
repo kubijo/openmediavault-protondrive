@@ -8,6 +8,14 @@ up *args:
 ssh *args:
     nix run {{ nix_args }} .#vm -- ssh "$@"
 
+# Run an argv-safe command in the running VM without opening a shell.
+exec *args:
+    nix run {{ nix_args }} .#vm-command -- exec -- "$@"
+
+# Query the Proton service socket with structured JSON (status, probe, or prepare).
+rpc *args:
+    nix run {{ nix_args }} .#vm-command -- rpc "$@"
+
 # Shut down the VM and retain its disk and login state.
 down *args:
     nix run {{ nix_args }} .#vm -- down "$@"
@@ -35,6 +43,14 @@ restore *args:
 # Check the running VM's overview, settings, and backup sets in Chromium; save screenshots.
 probe *args:
     nix run {{ nix_args }} .#web-probe -- "$@"
+
+# Run an authenticated UI backup, restore check, and cancellation with video evidence.
+live *args:
+    nix run {{ nix_args }} .#web-probe -- --live "$@"
+
+# Interrupt a real fixture upload and verify safe retry and restore through the web UI.
+retry *args:
+    nix run {{ nix_args }} .#web-probe -- --live --upload-retry "$@"
 
 # Exercise disposable init, web changes, snapshot restore, reset, and backup restore.
 flow:

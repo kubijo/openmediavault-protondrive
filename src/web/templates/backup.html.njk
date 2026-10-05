@@ -6,6 +6,15 @@
     {% if phase and phase != 'idle' %}
         <p>Last reported phase: {{ phase | escape }}</p>
     {% endif %}
+    {% if running and transferphase | default('') %}
+        <p class="protondrive-transfer">
+            <span class="protondrive-transfer-phase">{{ transferphase | escape }}</span>:
+            <span class="protondrive-transfer-file">{{ transferfile | escape }}</span>
+            (<span class="protondrive-transfer-elapsed">{{ transferelapsed | escape }}</span>s elapsed)
+        </p>
+    {% elif running and message | default('') and phase in ['archiving', 'verifying', 'uploading', 'retention'] %}
+        <p>Current item: {{ message | escape }}</p>
+    {% endif %}
     <p>Last successful backup: {{ (lastsuccess or 'No successful backup yet') | escape }}</p>
     {% if error %}
         <p><strong>Last backup error:</strong> {{ error | escape }}</p>

@@ -2,11 +2,14 @@
 
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Unpack
 from unittest.mock import Mock, patch
 
 import interactive_vm
 from vm_control import VMState
+from vm_runtime import RunOptions
 
 root = Path(sys.argv[2])
 state = VMState(root)
@@ -15,7 +18,7 @@ state.write({'initialized': True, 'ssh_port': 2222, 'http_port': 8080, 'remote_f
 run = subprocess.run
 
 
-def session(command, **kwargs):
+def session(command: Sequence[str], **kwargs: Unpack[RunOptions]) -> subprocess.CompletedProcess[bytes]:
     if command[0] == 'ssh':
         (root / 'ready').touch()
         if sys.argv[1] == 'exit':

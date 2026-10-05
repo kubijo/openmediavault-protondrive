@@ -26,6 +26,14 @@ data:
       - type: hidden
         name: phase
       - type: hidden
+        name: message
+      - type: hidden
+        name: transferphase
+      - type: hidden
+        name: transferfile
+      - type: hidden
+        name: transferelapsed
+      - type: hidden
         name: lastsuccess
       - type: hidden
         name: details

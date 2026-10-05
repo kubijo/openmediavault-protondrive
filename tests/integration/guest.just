@@ -1,6 +1,6 @@
 set default-list
 set positional-arguments
-set shell := ["/bin/sh", "/root/guest-recipe.sh", "-c"]
+set shell := ["/bin/sh", "/usr/local/lib/omv-protondrive-vm/guest-recipe.sh", "-c"]
 
 # Show account and backup status.
 status:
@@ -20,11 +20,11 @@ restart:
 
 # Show OMV modules waiting for configuration apply.
 pending:
-    python3 /root/guest_commands.py pending
+    python3 /usr/local/lib/omv-protondrive-vm/guest_commands.py pending
 
 # Apply plugin-related changes, refusing unrelated pending changes.
 apply:
-    python3 /root/guest_commands.py apply
+    python3 /usr/local/lib/omv-protondrive-vm/guest_commands.py apply
 
 # Rebuild OMV's web interface definitions.
 workbench:

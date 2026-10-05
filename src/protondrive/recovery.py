@@ -1,15 +1,21 @@
 """Durable container recovery, also invoked by systemd after abnormal exit."""
 
-import json
 import math
 import re
 import subprocess
 import time
+from pathlib import Path
+from typing import Protocol
 
 from .common import STATE, BackupError, atomic_json, sync_directory
+from .json_data import decode
 
 
-def docker(*args):
+class DockerCommand(Protocol):
+    def __call__(self, *args: str) -> str: ...
+
+
+def docker(*args: str) -> str:
     result = subprocess.run(['/usr/bin/docker', *args], capture_output=True, text=True, timeout=660, check=False)
     if result.returncode:
         raise BackupError(f'Docker {args[0]} failed: {result.stderr.strip()}')
@@ -17,19 +23,24 @@ def docker(*args):
 
 
 class Recovery:
-    def __init__(self, state=STATE, command=docker):
+    def __init__(self, state: Path = STATE, command: DockerCommand = docker) -> None:
         self.path = state / 'recovery.json'
         self.command = command
 
-    def restore(self):
+    def restore(self) -> None:
         if not self.path.exists():
             return
-        record = json.loads(self.path.read_text())
+        record = decode(self.path.read_text())
         if not isinstance(record, (dict, list)):
             raise BackupError('Invalid container recovery record')
-        remaining = record if isinstance(record, list) else record.get('ids')
-        if not isinstance(remaining, list) or any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in remaining):
+        values = record if isinstance(record, list) else record.get('ids')
+        if not isinstance(values, list):
             raise BackupError('Invalid container recovery record; administrator recovery required')
+        remaining: list[str] = []
+        for cid in values:
+            if not isinstance(cid, str) or not re.fullmatch(r'[a-f0-9]{64}', cid):
+                raise BackupError('Invalid container recovery record; administrator recovery required')
+            remaining.append(cid)
         # Killing a Docker CLI does not cancel a stop request already accepted
         # by dockerd. Wait out that request before deciding a running container
         # is recovered, otherwise it could stop just after we clear the record.
@@ -39,7 +50,7 @@ class Recovery:
         delay = deadline - time.time()
         if delay > 0:
             time.sleep(min(delay, 665))
-        failures = []
+        failures: list[str] = []
         for cid in list(remaining):
             try:
                 if self.command('inspect', '--format', '{{.State.Running}}', cid).strip() != 'true':
@@ -55,7 +66,7 @@ class Recovery:
         self.path.unlink()
         sync_directory(self.path.parent)
 
-    def stop(self, timeout):
+    def stop(self, timeout: int) -> None:
         self.restore()
         ids = self.command('ps', '--quiet', '--no-trunc').split()
         if any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in ids):

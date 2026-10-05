@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from helpers import configuration
-
 from protondrive.common import BackupError
+from protondrive.models import Manifest, RemoteEntry
 from protondrive.retention import metadata, prune_remote
 from protondrive.runner import prune_local
 
@@ -15,7 +15,7 @@ class RetentionTests(unittest.TestCase):
     def setUp(self):
         self.config, self.item = configuration()
 
-    def value(self, number):
+    def value(self, number: int) -> Manifest:
         timestamp = f'202610{number:02}T0300Z'
         return {
             'format': 1,
@@ -30,7 +30,7 @@ class RetentionTests(unittest.TestCase):
     def test_only_old_complete_pairs_are_removed(self):
         self.item['remotekeep'] = 2
         values = [self.value(i) for i in (1, 2, 3)]
-        listing = []
+        listing: list[RemoteEntry] = []
         for value in values:
             listing.extend(
                 [
@@ -44,12 +44,12 @@ class RetentionTests(unittest.TestCase):
                 ]
             )
         listing.append({'name': 'personal.txt', 'uid': 'personal', 'type': 'file', 'size': 10})
-        cli = Mock()
-        cli.list.return_value = listing
+        trash = Mock()
+        cli = Mock(list=Mock(return_value=listing), trash=trash)
         with patch('protondrive.retention.read_remote_manifest', side_effect=values):
             prune_remote(cli, self.config, self.item, '/my-files/test')
-        self.assertEqual(cli.purge.call_count, 2)
-        self.assertEqual(cli.purge.call_args_list[0].args[1]['name'], values[0]['archive'])
+        self.assertEqual(trash.call_count, 2)
+        trash.assert_any_call('/my-files/test', listing[0])
 
     def test_foreign_manifest_prevents_any_cleanup(self):
         value = self.value(1)

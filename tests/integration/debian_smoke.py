@@ -1,15 +1,18 @@
 """Run the Debian ABI/session tests in an automatically removed disposable container."""
 
-import json
 import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-import tyro
+from cli_options import parse_options
+from tool_data import decode, mapping, string
 
 SOURCE = Path(__file__).resolve().parents[2]
-DEBIAN = json.loads((SOURCE / 'config/sources.json').read_text())['debian-container']
+DEBIAN = {
+    key: string(value)
+    for key, value in mapping(decode((SOURCE / 'config/sources.json').read_text())['debian-container']).items()
+}
 
 
 @dataclass
@@ -50,4 +53,4 @@ def main(options: Options):
 
 
 if __name__ == '__main__':
-    main(tyro.cli(Options))
+    main(parse_options(Options))

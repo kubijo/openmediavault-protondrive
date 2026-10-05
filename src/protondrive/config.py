@@ -1,14 +1,15 @@
 """Configuration validation shared by the runner and the OMV save operation."""
 
-import json
 import re
 import uuid
 from pathlib import Path, PurePosixPath
 
 from .common import CONFIG, BackupError
+from .json_data import decode, object_value, string
+from .models import BackupSet, Configuration
 
 
-def boolean(value):
+def boolean(value: object) -> bool:
     if value in (True, 1, '1', 'true'):
         return True
     if value in (False, 0, '0', 'false'):
@@ -16,12 +17,14 @@ def boolean(value):
     raise BackupError('Invalid boolean')
 
 
-def lines(value):
+def lines(value: str) -> list[str]:
     return [line.strip() for line in value.splitlines() if line.strip()]
 
 
-def identifier(value):
+def identifier(value: object) -> str:
     try:
+        if not isinstance(value, str):
+            raise TypeError()
         if str(uuid.UUID(value)) != value or uuid.UUID(value).version != 4:
             raise ValueError()
     except (ValueError, TypeError, AttributeError) as exc:
@@ -29,7 +32,7 @@ def identifier(value):
     return value
 
 
-def local_path(value):
+def local_path(value: object) -> Path:
     if not isinstance(value, str) or not value.startswith('/'):
         raise BackupError('Source and staging paths must be absolute')
     if any(ord(c) < 32 for c in value) or '..' in PurePosixPath(value).parts:
@@ -37,47 +40,61 @@ def local_path(value):
     return Path(value).resolve()
 
 
-def validate(config):
-    result = dict(config)
-    result['enable'] = boolean(config['enable'])
-    identifier(config['instanceuuid'])
-    for key, low, high in (
-        ('schedulehour', 0, 23),
-        ('scheduleminute', 0, 59),
-        ('minimumfreebytes', 1048576, 2**53 - 1),
-        ('containerstoptimeout', 1, 600),
-        ('commandtimeout', 1, 600),
-        ('transfertimeout', 60, 86400),
-    ):
-        value = int(config[key])
-        if not low <= value <= high:
-            raise BackupError(f'Invalid {key}')
-        result[key] = value
+def bounded(value: object, name: str, low: int, high: int) -> int:
+    if not isinstance(value, (str, int, float)):
+        raise BackupError(f'Invalid {name}')
+    result = int(value)
+    if not low <= result <= high:
+        raise BackupError(f'Invalid {name}')
+    return result
+
+
+def validate(value: object) -> Configuration:
+    config = object_value(value)
+    result: Configuration = {
+        'enable': boolean(config['enable']),
+        'instanceuuid': identifier(config['instanceuuid']),
+        'schedulehour': bounded(config['schedulehour'], 'schedulehour', 0, 23),
+        'scheduleminute': bounded(config['scheduleminute'], 'scheduleminute', 0, 59),
+        'minimumfreebytes': bounded(config['minimumfreebytes'], 'minimumfreebytes', 1048576, 2**53 - 1),
+        'containerstoptimeout': bounded(config['containerstoptimeout'], 'containerstoptimeout', 1, 600),
+        'commandtimeout': bounded(config['commandtimeout'], 'commandtimeout', 1, 600),
+        'transfertimeout': bounded(config['transfertimeout'], 'transfertimeout', 60, 86400),
+        'stagingpath': string(config['stagingpath']),
+        'remotepath': string(config['remotepath']),
+        'sets': [],
+    }
     staging = local_path(config['stagingpath'])
     if staging == Path('/') or staging.is_symlink():
         raise BackupError('Invalid staging directory')
     result['stagingpath'] = str(staging)
-    remote = config['remotepath']
-    if not re.fullmatch(r'/my-files(?:/[A-Za-z0-9 _.-]+)+', remote):
-        raise BackupError('Remote path must be a folder below /my-files')
-    if any(p in ('.', '..') or p.startswith('-') for p in remote.split('/')[2:]):
-        raise BackupError('Invalid remote path component')
-    names, ids, sets = set(), set(), []
-    for item in config.get('sets', []):
-        item = dict(item)
-        identifier(item['uuid'])
+    remote = result['remotepath']
+    match = re.fullmatch(r'/my-files/([A-Za-z0-9 _.-]+)', remote)
+    if not match or match[1] in ('.', '..') or match[1].startswith('-'):
+        raise BackupError('Remote path must be one folder directly under /my-files')
+    names: set[str] = set()
+    ids: set[str] = set()
+    raw_sets = config.get('sets', [])
+    if not isinstance(raw_sets, list):
+        raise BackupError('Backup sets must be a list')
+    for raw in raw_sets:
+        data = object_value(raw)
+        item: BackupSet = {
+            'uuid': identifier(data['uuid']),
+            'name': string(data['name']),
+            'enable': boolean(data['enable']),
+            'stopcontainers': boolean(data['stopcontainers']),
+            'localkeep': bounded(data['localkeep'], 'local retention', 1, 10000),
+            'remotekeep': bounded(data['remotekeep'], 'remote retention', 1, 10000),
+            'paths': string(data['paths']),
+            'excludes': string(data['excludes']),
+        }
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,63}', item['name']):
             raise BackupError('Set name must be a simple unique identifier')
         if item['name'] in names or item['uuid'] in ids:
             raise BackupError('Duplicate backup set')
         names.add(item['name'])
         ids.add(item['uuid'])
-        for key in ('enable', 'stopcontainers'):
-            item[key] = boolean(item[key])
-        for key in ('localkeep', 'remotekeep'):
-            item[key] = int(item[key])
-            if not 1 <= item[key] <= 10000:
-                raise BackupError('Retention must be between 1 and 10000')
         paths = lines(item['paths'])
         if not paths:
             raise BackupError('A backup set needs at least one source')
@@ -88,22 +105,20 @@ def validate(config):
         for index, path in enumerate(resolved):
             if any(path == other or path in other.parents or other in path.parents for other in resolved[:index]):
                 raise BackupError('Sources within a set must not overlap')
-        for value in lines(item['excludes']):
+        for exclusion in lines(item['excludes']):
             if (
-                value.startswith('/')
-                or any(p in ('.', '..') for p in value.split('/'))
-                or any(ord(c) < 32 for c in value)
+                exclusion.startswith('/')
+                or any(p in ('.', '..') for p in exclusion.split('/'))
+                or any(ord(c) < 32 for c in exclusion)
             ):
                 raise BackupError('Exclusions must be literal source-relative paths')
-        sets.append(item)
-    result['sets'] = sets
+        result['sets'].append(item)
     return result
 
 
-def load():
-    with CONFIG.open() as stream:
-        return validate(json.load(stream))
+def load() -> Configuration:
+    return validate(decode(CONFIG.read_text()))
 
 
-def remote_folder(config, item):
+def remote_folder(config: Configuration, item: BackupSet) -> str:
     return f'{config["remotepath"]}/{config["instanceuuid"]}/{item["uuid"]}'

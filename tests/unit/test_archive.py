@@ -5,10 +5,10 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from helpers import configuration
-
 from protondrive.archive import archive, check_space, estimate
 from protondrive.common import BackupError
 
@@ -16,7 +16,7 @@ from protondrive.common import BackupError
 class ArchiveTests(unittest.TestCase):
     def test_low_space(self):
         with (
-            patch('shutil.disk_usage', return_value=shutil._ntuple_diskusage(100, 95, 5)),
+            patch('shutil.disk_usage', return_value=SimpleNamespace(total=100, used=95, free=5)),
             self.assertRaises(BackupError),
         ):
             check_space('/', 4, 2)
@@ -43,7 +43,7 @@ class ArchiveTests(unittest.TestCase):
     def test_restore_numeric_owner(self):
         self.roundtrip(0o2750, owner=(1234, 2345))
 
-    def roundtrip(self, mode, extended=False, owner=None):
+    def roundtrip(self, mode: int, extended: bool = False, owner: tuple[int, int] | None = None) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / 'source'

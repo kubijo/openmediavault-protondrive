@@ -5,30 +5,31 @@ import hashlib
 import json
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
+from tool_data import decode, string
 
-def fingerprint(path: Path):
+
+def fingerprint(path: Path) -> str:
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
 class BaseCache:
-    def __init__(self, directory: Path, inputs: dict):
+    def __init__(self, directory: Path, inputs: Mapping[str, object]) -> None:
         self.inputs = inputs
         self.key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
         self.directory = directory.resolve() / self.key
 
-    def current(self):
+    def current(self) -> Path | None:
         pointer = self.directory / 'current.json'
         if not pointer.exists():
             return None
         try:
-            metadata = json.loads(pointer.read_text())
-            if not isinstance(metadata['generation'], str):
-                return None
-            generation = str(uuid.UUID(hex=metadata['generation'])).replace('-', '')
+            metadata = decode(pointer.read_text())
+            generation = str(uuid.UUID(hex=string(metadata['generation']))).replace('-', '')
             image = self.directory / generation / 'base.qcow2'
             if metadata['inputs'] == self.inputs and image.is_file() and image.stat().st_size == metadata['size']:
                 return image
@@ -36,7 +37,7 @@ class BaseCache:
             pass
         return None
 
-    def ensure(self, build, *, refresh=False):
+    def ensure(self, build: Callable[[Path], None], *, refresh: bool = False) -> tuple[Path, bool]:
         self.directory.mkdir(parents=True, exist_ok=True)
         with (self.directory / 'build.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -53,7 +54,7 @@ class BaseCache:
                 metadata = {
                     'generation': generation,
                     'inputs': self.inputs,
-                    'created': datetime.now(timezone.utc).isoformat(),
+                    'created': datetime.now(UTC).isoformat(),
                     'size': image.stat().st_size,
                 }
                 image.chmod(0o444)

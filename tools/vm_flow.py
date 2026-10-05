@@ -3,27 +3,40 @@
 import json
 import os
 import signal
-import socket
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from process_signals import termination_signals
+from tool_data import decode, string
+from vm_runtime import free_port
 
 
-def free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(('127.0.0.1', 0))
-        return listener.getsockname()[1]
+class StepRecord(TypedDict):
+    name: str
+    command: tuple[str, ...]
+    exit: int
+    log: str
+
+
+class FlowReport(TypedDict):
+    url: str
+    state: str
+    steps: list[StepRecord]
+    remote_folders: NotRequired[dict[str, str]]
+    instance_uuids: NotRequired[dict[str, str]]
+    ok: NotRequired[bool]
+    error: NotRequired[str]
 
 
 def main() -> int:
     root = Path.cwd()
     if not (root / 'justfile').is_file():
         raise SystemExit('Run from the repository root')
-    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
     base = (root / '.tmp/autonomous-flow').resolve()
     base.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix=f'{stamp}-', dir=base))
@@ -33,9 +46,9 @@ def main() -> int:
     while http_port == ssh_port:
         http_port = free_port()
     url = f'http://127.0.0.1:{http_port}'
-    report = {'url': url, 'state': str(state), 'steps': []}
+    report: FlowReport = {'url': url, 'state': str(state), 'steps': []}
 
-    def run(name: str, *command: str, timeout=3600) -> Path:
+    def run(name: str, *command: str, timeout: float = 3600) -> Path:
         print(f'{name} …', flush=True)
         log = directory / f'{name}.log'
         with (
@@ -74,6 +87,8 @@ def main() -> int:
             name,
             'just',
             'vm::probe',
+            '--state-dir',
+            str(state),
             '--url',
             url,
             '--output',
@@ -86,38 +101,47 @@ def main() -> int:
         )
         for line in reversed(log.read_text().splitlines()):
             try:
-                result = json.loads(line)
-            except json.JSONDecodeError:
+                result = decode(line)
+            except (ValueError, TypeError):
                 continue
-            if isinstance(result, dict) and 'ok' in result:
+            if 'ok' in result:
                 if result['ok'] and isinstance(result.get('remote_folder'), str):
-                    return result['remote_folder']
+                    return string(result['remote_folder'])
                 break
         raise RuntimeError(f'{name} had no valid browser result; see {log}')
+
+    def instance_uuid() -> str:
+        value = decode((state / 'instance/instance.json').read_text())['proton_instance_uuid']
+        if not isinstance(value, str) or not value:
+            raise RuntimeError('The VM did not record its Proton backup instance UUID')
+        return value
 
     try:
         vm('init', 'up', '--no-shell', '--ssh-port', str(ssh_port), '--http-port', str(http_port))
         initial_remote = probe('initial-web', '--expect-hour', '3')
+        initial_instance = instance_uuid()
         vm('stop-before-snapshot', 'down')
         vm('snapshot', 'snapshot', '--snapshot-name', 'baseline')
         vm('resume-for-change', 'up', '--no-shell')
         probe('change-web', '--expect-hour', '3', '--change-hour', '4')
         changed_remote = probe('changed-web', '--expect-hour', '4')
-        if changed_remote != initial_remote:
-            raise RuntimeError('Changing the backup hour unexpectedly changed the remote folder')
+        if changed_remote != initial_remote or instance_uuid() != initial_instance:
+            raise RuntimeError('Changing the backup hour unexpectedly changed the remote identity')
         vm('stop-before-restore', 'down')
         vm('restore', 'restore', '--snapshot-name', 'baseline')
         vm('resume-after-restore', 'up', '--no-shell')
         restored_remote = probe('restored-web', '--expect-hour', '3')
-        if restored_remote != initial_remote:
-            raise RuntimeError('Restored VM did not recover its original remote folder')
+        if restored_remote != initial_remote or instance_uuid() != initial_instance:
+            raise RuntimeError('Restored VM did not recover its original remote identity')
         vm('stop-before-reset', 'down')
         vm('reset', 'reset', '--yes')
         vm('fresh-init', 'up', '--no-shell', '--ssh-port', str(ssh_port), '--http-port', str(http_port))
         reset_remote = probe('reset-web', '--expect-hour', '3')
-        if reset_remote == initial_remote:
-            raise RuntimeError('Reset VM retained the previous remote folder identity')
+        reset_instance = instance_uuid()
+        if reset_remote != initial_remote or reset_instance == initial_instance:
+            raise RuntimeError('Reset VM did not use the shared development root with a new instance UUID')
         report['remote_folders'] = {'initial': initial_remote, 'reset': reset_remote}
+        report['instance_uuids'] = {'initial': initial_instance, 'reset': reset_instance}
         vm('stop-after-reset', 'down')
         run('backup-restore', 'just', 'test::vm', '--reports', str(directory / 'backup-restore'), '--keep-failed')
         vm('delete-disposable-disk', 'reset', '--yes')

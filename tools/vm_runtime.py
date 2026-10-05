@@ -8,16 +8,19 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO, Literal, TypedDict, Unpack, cast, overload
 
-import tyro
 import yaml
+from rich.text import Text
+
+from cli_options import parse_options
 from console import child_environment, print_exception
 from process_output import ProcessOutput
-from process_signals import termination_signals
-from rich.text import Text
+from process_signals import TerminationRequested, termination_signals
 from vm_cache import BaseCache, fingerprint
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -46,17 +49,56 @@ class Options:
     """Use plain output without animations."""
 
 
-def run(*args: str, check=True, **kwargs):
-    return subprocess.run(args, check=check, **kwargs)
+class RunOptions(TypedDict, total=False):
+    cwd: str | Path
+    stdin: int | IO[bytes] | IO[str] | None
+    stdout: int | IO[bytes] | IO[str] | None
+    stderr: int | IO[bytes] | IO[str] | None
+    capture_output: bool
+    timeout: float | None
+    env: Mapping[str, str] | None
+    start_new_session: bool
 
 
-def free_port():
+@overload
+def run(
+    *args: str, text: Literal[True], input: str | None = None, check: bool = True, **kwargs: Unpack[RunOptions]
+) -> subprocess.CompletedProcess[str]: ...
+
+
+@overload
+def run(
+    *args: str,
+    text: Literal[False] = False,
+    input: bytes | None = None,
+    check: bool = True,
+    **kwargs: Unpack[RunOptions],
+) -> subprocess.CompletedProcess[bytes]: ...
+
+
+def run(
+    *args: str, text: bool = False, input: str | bytes | None = None, check: bool = True, **kwargs: Unpack[RunOptions]
+) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+    if text:
+        if input is not None and not isinstance(input, str):
+            raise TypeError('Text commands require string input')
+        return subprocess.run(args, text=True, input=input, check=check, **kwargs)
+    if input is not None and not isinstance(input, bytes):
+        raise TypeError('Binary commands require bytes input')
+    return subprocess.run(args, input=input, check=check, **kwargs)
+
+
+def free_port() -> int:
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
-        return listener.getsockname()[1]
+        # getsockname is untyped because its shape depends on the address family.
+        address = cast(tuple[object, ...], listener.getsockname())
+        if len(address) < 2 or not isinstance(address[1], int):
+            raise RuntimeError('Expected an Internet socket address')
+        return address[1]
 
 
-def prepare(directory: Path, image: Path):
+def prepare(directory: Path, image: Path) -> Path:
     key = directory / 'key'
     run('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key))
     user_data = {
@@ -100,19 +142,54 @@ class Guest:
     ssh: list[str]
     scp: list[str]
     directory: Path
-    process: subprocess.Popen | None
+    process: subprocess.Popen[bytes] | None
 
-    def run(self, *args, **kwargs):
-        return run(*self.ssh, shlex.join(args), **kwargs)
+    @overload
+    def run(
+        self,
+        *args: str,
+        text: Literal[True],
+        input: str | None = None,
+        check: bool = True,
+        **kwargs: Unpack[RunOptions],
+    ) -> subprocess.CompletedProcess[str]: ...
 
-    def copy(self, *paths):
+    @overload
+    def run(
+        self,
+        *args: str,
+        text: Literal[False] = False,
+        input: bytes | None = None,
+        check: bool = True,
+        **kwargs: Unpack[RunOptions],
+    ) -> subprocess.CompletedProcess[bytes]: ...
+
+    def run(
+        self,
+        *args: str,
+        text: bool = False,
+        input: str | bytes | None = None,
+        check: bool = True,
+        **kwargs: Unpack[RunOptions],
+    ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+        if text:
+            if input is not None and not isinstance(input, str):
+                raise TypeError('Text commands require string input')
+            return run(*self.ssh, shlex.join(args), text=True, input=input, check=check, **kwargs)
+        if input is not None and not isinstance(input, bytes):
+            raise TypeError('Binary commands require bytes input')
+        if input is None:
+            return run(*self.ssh, shlex.join(args), check=check, **kwargs)
+        return run(*self.ssh, shlex.join(args), input=input, check=check, **kwargs)
+
+    def copy(self, *paths: str | Path) -> None:
         run(*self.scp, *map(str, paths), 'root@127.0.0.1:/root/')
 
     @property
-    def job_marker(self):
+    def job_marker(self) -> Path:
         return self.directory / 'pending-job'
 
-    def cancel_job(self):
+    def cancel_job(self) -> None:
         """Stop the whole remote service and acknowledge cancellation before retrying."""
         self.run('systemctl', 'stop', JOB_UNIT, check=False, timeout=30)
         result = self.run(
@@ -129,11 +206,11 @@ class Guest:
             raise RuntimeError('Remote provisioning has not stopped; retry after checking the VM')
         self.job_marker.unlink(missing_ok=True)
 
-    def ensure_idle(self):
+    def ensure_idle(self) -> None:
         if self.job_marker.exists():
             self.cancel_job()
 
-    def python(self, output: ProcessOutput, script: str, log: Path, timeout: int, *args):
+    def python(self, output: ProcessOutput, script: str, log: Path, timeout: int, *args: str) -> None:
         self.ensure_idle()
         environment = child_environment(terminal=output.animate)
         variables = [
@@ -176,7 +253,7 @@ class Guest:
             self.job_marker.unlink(missing_ok=True)
 
 
-def guest_connection(directory: Path, key: Path, port: int, process=None):
+def guest_connection(directory: Path, key: Path, port: int, process: subprocess.Popen[bytes] | None = None) -> Guest:
     ssh_options = [
         '-F',
         '/dev/null',
@@ -204,20 +281,20 @@ def connect(
     directory: Path,
     key: Path,
     port: int,
-    process,
+    process: subprocess.Popen[bytes] | None,
     output: ProcessOutput,
     label: str,
     *,
-    disposable=True,
-    is_running=None,
-):
+    disposable: bool = True,
+    is_running: Callable[[], bool] | None = None,
+) -> Guest:
     guest = guest_connection(directory, key, port, process)
     with output.stage('Boot VM and wait for SSH'):
         deadline = time.monotonic() + 180
         while subprocess.run(
             [*guest.ssh, 'true'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
         ).returncode:
-            alive = is_running() if is_running is not None else process.poll() is None
+            alive = is_running() if is_running is not None else process is not None and process.poll() is None
             if not alive or time.monotonic() > deadline:
                 raise RuntimeError(f'VM failed to become reachable; inspect {label}serial.log')
             time.sleep(2)
@@ -231,7 +308,7 @@ def connect(
     return guest
 
 
-def qemu_command(directory: Path, serial: Path, ports: dict[int, int]):
+def qemu_command(directory: Path, serial: Path, ports: dict[int, int]) -> list[str]:
     accelerator = 'kvm' if os.access('/dev/kvm', os.R_OK | os.W_OK) else 'tcg'
     forwards = [f'hostfwd=tcp:127.0.0.1:{host}-:{guest}' for guest, host in ports.items()]
     return [
@@ -259,7 +336,7 @@ def qemu_command(directory: Path, serial: Path, ports: dict[int, int]):
     ]
 
 
-def provision(guest: Guest, options: Options, dependencies: str, output: ProcessOutput):
+def provision(guest: Guest, options: Options, dependencies: str, output: ProcessOutput) -> None:
     with output.stage('Provision plugin-free OMV base'):
         dependency_file = guest.directory / 'plugin-depends.txt'
         dependency_file.write_text(dependencies)
@@ -273,7 +350,7 @@ def provision(guest: Guest, options: Options, dependencies: str, output: Process
         )
 
 
-def test_guest(guest: Guest, options: Options, output: ProcessOutput):
+def test_guest(guest: Guest, options: Options, output: ProcessOutput) -> None:
     bundle = guest.directory / 'source.tar'
     with output.stage('Transfer package and fixtures'):
         with tarfile.open(bundle, 'w') as archive:
@@ -293,7 +370,7 @@ def test_guest(guest: Guest, options: Options, output: ProcessOutput):
 
 
 @contextmanager
-def boot(options: Options, image: Path, output: ProcessOutput, *, label=''):
+def boot(options: Options, image: Path, output: ProcessOutput, *, label: str = '') -> Generator[Guest, None, None]:
     with tempfile.TemporaryDirectory(prefix='protondrive-vm-') as temporary:
         directory = Path(temporary)
         with output.stage('Prepare disposable VM'):
@@ -323,7 +400,7 @@ def boot(options: Options, image: Path, output: ProcessOutput, *, label=''):
             raise
 
 
-def base_inputs(options: Options, dependencies: str):
+def base_inputs(options: Options, dependencies: str) -> dict[str, str]:
     return {
         'image': fingerprint(options.image),
         'provision': fingerprint(SOURCE / 'tests/integration/provision_guest.py'),
@@ -334,18 +411,18 @@ def base_inputs(options: Options, dependencies: str):
     }
 
 
-def build_base(destination: Path, options: Options, dependencies: str, output: ProcessOutput):
+def build_base(destination: Path, options: Options, dependencies: str, output: ProcessOutput) -> None:
     with boot(options, options.image, output, label='base-') as guest:
         provision(guest, options, dependencies, output)
         with output.stage('Seal and shut down reusable base'):
             guest.python(output, '/root/provision_guest.py', options.reports / 'base-seal.log', 120, '--seal')
-            if guest.process.wait(timeout=120) != 0:
+            if guest.process is None or guest.process.wait(timeout=120) != 0:
                 raise RuntimeError('Base VM did not shut down cleanly; cache will not be published')
             run('qemu-img', 'convert', '-O', 'qcow2', str(guest.directory / 'disk.qcow2'), str(destination))
             run('qemu-img', 'check', str(destination))
 
 
-def run_vm(options: Options, output: ProcessOutput):
+def run_vm(options: Options, output: ProcessOutput) -> None:
     if options.no_cache and options.refresh_base:
         raise ValueError('--no-cache and --refresh-base cannot be combined')
     options.image = options.image.resolve(strict=True)
@@ -365,11 +442,11 @@ def run_vm(options: Options, output: ProcessOutput):
         test_guest(guest, options, output)
 
 
-def resolve_base(options: Options, dependencies: str, output: ProcessOutput):
+def resolve_base(options: Options, dependencies: str, output: ProcessOutput) -> Path:
     with output.stage('Resolve reusable OMV base'):
         cache = BaseCache(options.cache_dir, base_inputs(options, dependencies))
 
-        def build(destination):
+        def build(destination: Path) -> None:
             output.console.print('CACHE REFRESH' if options.refresh_base else 'CACHE MISS: building OMV base')
             build_base(destination, options, dependencies, output)
 
@@ -379,7 +456,7 @@ def resolve_base(options: Options, dependencies: str, output: ProcessOutput):
 
 
 @termination_signals()
-def main(options: Options):
+def main(options: Options) -> None:
     output = ProcessOutput(no_color=options.no_color, in_clanker=options.in_clanker)
     output.console.print(Text('OMV VM integration tests', style='bold'))
     output.console.print('The disposable VM is removed when this test finishes.')
@@ -388,8 +465,8 @@ def main(options: Options):
         run_vm(options, output)
     except KeyboardInterrupt as error:
         output.console.print(Text(f'CANCELLED: OMV VM tests. Logs: {options.reports}', style='bold yellow'))
-        raise SystemExit(128 + getattr(error, 'signum', signal.SIGINT)) from None
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        raise SystemExit(128 + (error.signum if isinstance(error, TerminationRequested) else signal.SIGINT)) from None
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
         print_exception(no_color=options.no_color, in_clanker=options.in_clanker)
         output.console.print(Text(f'FAILED: OMV VM tests. Logs: {options.reports}', style='bold red'))
         raise SystemExit(1) from None
@@ -399,4 +476,4 @@ def main(options: Options):
 
 
 if __name__ == '__main__':
-    main(tyro.cli(Options))
+    main(parse_options(Options))

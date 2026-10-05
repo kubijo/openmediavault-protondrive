@@ -50,6 +50,12 @@ let
       [
         (lib.getExe pkgs.deptry)
         "."
+        # Discover first-party modules from the host, guest, and test import roots.
+        "src"
+        "tools"
+        "tools/tests"
+        "tests/unit"
+        "tests/integration"
         "--no-ansi"
       ]
       [ 1 ]

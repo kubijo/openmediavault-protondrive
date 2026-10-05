@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path('/var/lib/openmediavault-protondrive/proton/fake-remote')
 
 
-def node(path):
+def node(path: Path) -> dict[str, object]:
     return {
         'uid': str(path.stat().st_ino),
         'name': {'ok': True, 'value': path.name},
@@ -18,7 +18,7 @@ def node(path):
     }
 
 
-def remote(name):
+def remote(name: str) -> Path:
     parts = Path(name).parts
     if len(parts) < 2 or parts[1] not in ('my-files', 'trash') or '..' in parts:
         raise ValueError('Invalid fixture path')

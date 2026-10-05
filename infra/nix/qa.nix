@@ -48,7 +48,7 @@ let
     cp -r ${src} source
     chmod -R u+w source
     cd source
-    patchShebangs tests/fixtures
+    patchShebangs tests/fixtures tools/tests/fixtures
     export PROTON_HERMETIC_TESTS=1
     ${pkgs.lib.getExe test}
     touch "$out"

@@ -1,16 +1,18 @@
 """VM panels using just's native recipe listing and colours."""
 
 import subprocess
+from pathlib import Path
 
+from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
 
-def path(console, label, value):
+def path(console: Console, label: str, value: str | Path) -> None:
     console.print(Text.assemble((f'{label}: ', 'dim'), (str(value), 'blue')), soft_wrap=True)
 
 
-def recipes(console, title, justfile, *, prefix=''):
+def recipes(console: Console, title: str, justfile: str | Path, *, prefix: str = '') -> None:
     result = subprocess.run(
         [
             'just',

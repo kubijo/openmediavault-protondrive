@@ -79,6 +79,24 @@ export async function checkOverviewLayout(page: Page, width: number): Promise<vo
         const sets = buttons.find(button => button.name === 'Backup sets');
         requireCondition(settings && sets, 'Mobile overview navigation actions are missing');
         requireCondition(Math.abs(settings.top - sets.top) <= 1, `${width}px navigation actions do not share a row`);
+        requireCondition(Math.abs(sets.left - settings.right - 8) <= 1, `${width}px navigation gap is not 8px`);
+        const rows = [...new Set(buttons.map(button => Math.round(button.top)))].map(top =>
+            buttons.filter(button => Math.abs(button.top - top) <= 1),
+        );
+        for (const [index, row] of rows.entries()) {
+            const first = row[0];
+            const last = row.at(-1);
+            requireCondition(first && last, 'Empty overview action row');
+            requireCondition(
+                Math.abs(first.left - settings.left) <= 1 && Math.abs(last.right - sets.right) <= 1,
+                `${width}px wrapped action row has inconsistent edge spacing`,
+            );
+            const previous = rows[index - 1];
+            if (previous) {
+                const bottom = Math.max(...previous.map(button => button.bottom));
+                requireCondition(Math.abs(first.top - bottom - 8) <= 1, `${width}px wrapped action gap is not 8px`);
+            }
+        }
     }
     for (const button of buttons) {
         requireCondition(

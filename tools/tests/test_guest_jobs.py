@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import vm_runtime
+from test_interactive_vm import OutputMock
 
 
 class GuestJobTests(unittest.TestCase):
@@ -20,8 +21,8 @@ class GuestJobTests(unittest.TestCase):
         for animate in (False, True):
             for failure in (subprocess.TimeoutExpired('ssh', 1), KeyboardInterrupt()):
                 with self.subTest(animate=animate, failure=type(failure).__name__):
-                    output = Mock(animate=animate)
-                    output.run.side_effect = failure
+                    output = OutputMock(animate=animate)
+                    output.run_mock.side_effect = failure
                     with (
                         patch.object(self.guest, 'run', return_value=Mock(stdout='inactive\n')) as remote,
                         self.assertRaises(type(failure)),
@@ -32,20 +33,20 @@ class GuestJobTests(unittest.TestCase):
                     self.assertFalse(self.guest.job_marker.exists())
 
     def test_unconfirmed_cancellation_blocks_retry(self):
-        output = Mock(animate=False)
-        output.run.side_effect = subprocess.TimeoutExpired('ssh', 1)
+        output = OutputMock(animate=False)
+        output.run_mock.side_effect = subprocess.TimeoutExpired('ssh', 1)
         with patch.object(self.guest, 'run', return_value=Mock(stdout='deactivating\n')):
             with self.assertRaisesRegex(RuntimeError, 'has not stopped'):
                 self.guest.python(output, '/root/fixture.py', self.root / 'log', 1)
             self.assertTrue(self.guest.job_marker.exists())
             with self.assertRaisesRegex(RuntimeError, 'has not stopped'):
                 self.guest.python(output, '/root/fixture.py', self.root / 'log', 1)
-        output.run.assert_called_once()
+        output.run_mock.assert_called_once()
         # Reconnection confirms the old job has stopped before admitting another.
-        output.run.side_effect = None
+        output.run_mock.side_effect = None
         with patch.object(self.guest, 'run', return_value=Mock(stdout='inactive\n')):
             self.guest.python(output, '/root/fixture.py', self.root / 'log', 1)
-        self.assertEqual(output.run.call_count, 2)
+        self.assertEqual(output.run_mock.call_count, 2)
         self.assertFalse(self.guest.job_marker.exists())
 
     def test_lost_ssh_connection_keeps_pending_job_marker(self):

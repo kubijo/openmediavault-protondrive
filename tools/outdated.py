@@ -5,15 +5,20 @@ import json
 import re
 import subprocess
 import urllib.request
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from http.client import HTTPResponse
 from pathlib import Path
+from typing import cast
 from urllib.parse import quote
 
-import tyro
 import yaml
+
+from cli_options import parse_options
 from console import child_environment
 from qa_report import Result
+from tool_data import decode, decode_value, items, mapping, string
 
 
 @dataclass
@@ -22,7 +27,7 @@ class Options:
 
 
 @functools.lru_cache(maxsize=256)
-def github(endpoint):
+def github(endpoint: str) -> list[dict[str, object]]:
     result = subprocess.run(
         ['gh', 'api', endpoint],
         check=True,
@@ -31,22 +36,25 @@ def github(endpoint):
         timeout=45,
         env=child_environment(),
     )
-    return json.loads(result.stdout)
+    return [mapping(value) for value in items(decode_value(result.stdout))]
 
 
 @functools.lru_cache(maxsize=256)
-def fetch(url):
+def fetch(url: str) -> str:
     request = urllib.request.Request(url, headers={'User-Agent': 'omv-protondrive-outdated/1'})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    response = cast(object, urllib.request.urlopen(request, timeout=30))
+    if not isinstance(response, HTTPResponse):
+        raise TypeError('Expected an HTTP response')
+    with response:
         return response.read().decode()
 
 
-def stable_version(value):
+def stable_version(value: str) -> tuple[int, ...] | None:
     match = re.fullmatch(r'v?(\d+(?:\.\d+)+)', value)
     return tuple(map(int, match[1].split('.'))) if match else None
 
 
-def compare(name, current, latest, detail=''):
+def compare(name: str, current: object, latest: object, detail: str = '') -> Result:
     if not isinstance(current, str) or not current or not isinstance(latest, str) or not latest:
         raise ValueError('Missing source version')
     state = 'up-to-date' if current.removeprefix('v') == latest.removeprefix('v') else 'outdated'
@@ -56,49 +64,53 @@ def compare(name, current, latest, detail=''):
     return Result(name, state, current, latest, detail)
 
 
-def proton_version(source):
-    prefix, artifact = source['url'].rsplit(f'/{source["version"]}/', 1)
-    versions = set(
-        re.findall(
+def proton_version(source: Mapping[str, object]) -> str:
+    prefix, artifact = string(source['url']).rsplit(f'/{source["version"]}/', 1)
+    versions = {
+        match[1]
+        for match in re.finditer(
             re.escape(prefix) + r'/([\d.]+)/' + re.escape(artifact),
-            fetch(source['updates']['url']),
+            fetch(string(mapping(source['updates'])['url'])),
         )
-    )
+    }
     if len(versions) != 1:
         raise ValueError('Proton download index did not identify exactly one matching artifact release')
     return versions.pop()
 
 
-def debian_version(source):
-    data = json.loads(fetch(source['updates']['url']))
-    versions = {item['data']['info']['version'] for item in data['items'] if 'info' in item.get('data', {})}
+def debian_version(source: Mapping[str, object]) -> str:
+    data = decode(fetch(string(mapping(source['updates'])['url'])))
+    records = [mapping(mapping(item).get('data', {})) for item in items(data['items'])]
+    versions = {string(mapping(item['info'])['version']) for item in records if 'info' in item}
     if len(versions) != 1:
         raise ValueError('Debian metadata did not identify exactly one image version')
     return versions.pop()
 
 
-def container_digest(source):
-    data = json.loads(fetch(f'{source["updates"]["url"]}/{quote(source["tag"], safe="")}'))
-    return data['digest']
+def container_digest(source: Mapping[str, object]) -> str:
+    url = string(mapping(source['updates'])['url'])
+    data = decode(fetch(f'{url}/{quote(string(source["tag"]), safe="")}'))
+    return string(data['digest'])
 
 
-def external_source(name, source):
+def external_source(name: str, source: Mapping[str, object]) -> Result:
     providers = {'proton-cli': proton_version, 'debian-cloud': debian_version, 'docker-hub': container_digest}
-    provider = source['updates']['provider']
+    updates = mapping(source['updates'])
+    provider = string(updates['provider'])
     if provider not in providers:
         return Result(name, 'unknown', detail=f'Unsupported application source provider: {provider}')
     latest = providers[provider](source)
-    return compare(name, source.get('version', source.get('digest')), latest, source['updates']['reason'])
+    return compare(name, source.get('version', source.get('digest')), latest, string(updates['reason']))
 
 
-def runner(current):
+def runner(current: str) -> Result:
     if not re.fullmatch(r'ubuntu-\d{2}\.04', current):
         return Result('GitHub runner', 'unknown', current, detail='No stable Ubuntu x64 runner policy for this label')
     # Release-backed x64 Ubuntu labels only, never beta images or another architecture.
     releases = github('repos/actions/runner-images/releases?per_page=100')
-    labels = set()
+    labels: set[str] = set()
     for release in releases:
-        match = re.match(r'ubuntu(\d{2})/', release['tag_name'])
+        match = re.match(r'ubuntu(\d{2})/', string(release['tag_name']))
         if match and not release['prerelease'] and not release['draft']:
             labels.add(f'ubuntu-{match[1]}.04')
     if not labels:
@@ -106,7 +118,7 @@ def runner(current):
     return compare('GitHub runner', current, max(labels))
 
 
-def guarded(name, callback):
+def guarded(name: str, callback: Callable[[], Result]) -> Result:
     try:
         return callback()
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
@@ -114,24 +126,31 @@ def guarded(name, callback):
         return Result(name, 'error', detail=f'Lookup failed ({type(exc).__name__}); sensitive diagnostics withheld')
 
 
-def application(root):
-    sources = json.loads((root / 'config/sources.json').read_text())
-    if not isinstance(sources, dict) or not sources:
+def application(root: Path) -> list[Result]:
+    sources = decode((root / 'config/sources.json').read_text())
+    if not sources:
         raise ValueError('Missing application source inventory')
-    jobs = [(name, functools.partial(external_source, name, source)) for name, source in sources.items()]
+    jobs: list[tuple[str, Callable[[], Result]]] = [
+        (name, functools.partial(external_source, name, mapping(source))) for name, source in sources.items()
+    ]
     workflows = sorted((root / '.github/workflows').glob('*.y*ml'))
     if not workflows:
         raise ValueError('Missing workflow inventory for runner policy')
-    labels = set()
+    labels: set[str] = set()
     for path in workflows:
-        workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-        for job in workflow['jobs'].values():
+        workflow = mapping(cast(object, yaml.load(path.read_text(), Loader=yaml.BaseLoader)))
+        for raw in mapping(workflow['jobs']).values():
+            job = mapping(raw)
             if 'runs-on' in job:
                 label = job['runs-on']
                 labels.add(label if isinstance(label, str) else json.dumps(label, sort_keys=True))
     jobs.extend(('GitHub runner', functools.partial(runner, label)) for label in sorted(labels))
+
+    def run_job(job: tuple[str, Callable[[], Result]]) -> Result:
+        return guarded(*job)
+
     with ThreadPoolExecutor(max_workers=6) as pool:
-        results = list(pool.map(lambda job: guarded(*job), jobs))
+        results = list(pool.map(run_job, jobs))
     results.append(
         Result(
             'NAS runtime',
@@ -143,7 +162,7 @@ def application(root):
     return results
 
 
-def main(options: Options):
+def main(options: Options) -> int:
     try:
         results = application(options.root)
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -154,7 +173,13 @@ def main(options: Options):
             {
                 'schemaVersion': 1,
                 'results': [
-                    {field: getattr(result, field) for field in ('name', 'state', 'current', 'latest', 'detail')}
+                    {
+                        'name': result.name,
+                        'state': result.state,
+                        'current': result.current,
+                        'latest': result.latest,
+                        'detail': result.detail,
+                    }
                     for result in results
                 ],
             }
@@ -164,4 +189,4 @@ def main(options: Options):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main(tyro.cli(Options)))
+    raise SystemExit(main(parse_options(Options)))

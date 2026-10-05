@@ -4,6 +4,8 @@ import os
 import re
 import sys
 import traceback
+from collections.abc import Callable
+from types import TracebackType
 
 from rich.console import Console
 from rich.text import Text
@@ -12,25 +14,25 @@ from rich.traceback import install as install_rich_traceback
 AGENT_ENVS = ('CLAUDECODE', 'CURSOR_AGENT', 'GEMINI_CLI', 'CODEX_THREAD_ID', 'OPENCODE', 'IN_CLANKER', 'in-clanker')
 
 
-def agent_mode(in_clanker=False):
+def agent_mode(in_clanker: bool = False) -> bool:
     return in_clanker or any(name in os.environ for name in AGENT_ENVS)
 
 
-def color_disabled(no_color=False):
+def color_disabled(no_color: bool = False) -> bool:
     return no_color or 'NO_COLOR' in os.environ or os.environ.get('TERM') == 'dumb'
 
 
-def force_color():
+def force_color() -> bool:
     return os.environ.get('FORCE_COLOR') in ('1', '2', '3', 'true')
 
 
-def plain_output(no_color=False, in_clanker=False):
+def plain_output(no_color: bool = False, in_clanker: bool = False) -> bool:
     if in_clanker or os.environ.get('FORCE_COLOR') == '0':
         return True
     return agent_mode() and not (force_color() and not color_disabled(no_color))
 
 
-def new_console(*, stderr=False, no_color=False, in_clanker=False):
+def new_console(*, stderr: bool = False, no_color: bool = False, in_clanker: bool = False) -> Console:
     plain = plain_output(no_color, in_clanker)
     disabled = plain or color_disabled(no_color)
     terminal = False if plain else (True if force_color() and not disabled else None)
@@ -44,7 +46,7 @@ def new_console(*, stderr=False, no_color=False, in_clanker=False):
     )
 
 
-def live_output(console, *, no_color=False, in_clanker=False):
+def live_output(console: Console, *, no_color: bool = False, in_clanker: bool = False) -> bool:
     return (
         not agent_mode(in_clanker)
         and not color_disabled(no_color)
@@ -54,7 +56,9 @@ def live_output(console, *, no_color=False, in_clanker=False):
     )
 
 
-def install_traceback(*, no_color=False, in_clanker=False):
+def install_traceback(
+    *, no_color: bool = False, in_clanker: bool = False
+) -> Callable[[type[BaseException], BaseException, TracebackType | None], object]:
     """Install readable crash reports without dumping credential-bearing locals."""
     previous = sys.excepthook
     if plain_output(no_color, in_clanker) or color_disabled(no_color):
@@ -65,7 +69,7 @@ def install_traceback(*, no_color=False, in_clanker=False):
     return previous
 
 
-def print_exception(*, no_color=False, in_clanker=False):
+def print_exception(*, no_color: bool = False, in_clanker: bool = False) -> None:
     """Render a caught exception using the same policy as unhandled crashes."""
     if plain_output(no_color, in_clanker) or color_disabled(no_color):
         traceback.print_exc()
@@ -73,15 +77,15 @@ def print_exception(*, no_color=False, in_clanker=False):
         new_console(stderr=True).print_exception(show_locals=False, width=100)
 
 
-def success(message):
+def success(message: str) -> None:
     new_console().print(Text.assemble(('PASS: ', 'bold green'), (message, '')))
 
 
-def error(message):
+def error(message: str) -> None:
     new_console(stderr=True).print(Text.assemble(('ERROR: ', 'bold red'), (message, '')))
 
 
-def style_diagnostic(text):
+def style_diagnostic(text: Text) -> Text:
     """Normalize tool palettes; reserve colour for meaningful status labels."""
     text = Text(text.plain)
     line = text.plain.lstrip()
@@ -118,7 +122,7 @@ def style_diagnostic(text):
     return text
 
 
-def child_environment(*, terminal=False):
+def child_environment(*, terminal: bool = False) -> dict[str, str]:
     # Captured subprocess diagnostics must remain readable in logs and JSON reports.
     environment = {
         **os.environ,

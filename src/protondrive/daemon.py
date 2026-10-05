@@ -1,33 +1,58 @@
 """Unprivileged service inside the private D-Bus session."""
 
 import json
+import os
+import signal
 import socketserver
 import stat
 import threading
 import time
+import uuid
 from pathlib import Path
 
-from .common import LIMIT, SOCKET, BackupError
+from .common import LIMIT, SOCKET, STATE, BackupError
 from .config import load, remote_folder
+from .json_data import JSONValue, decode
+from .models import Configuration
 from .protoncli import ProtonCli
 from .retention import prune_remote, upload_pair
 
 
+def load_owner_id(path: Path = STATE / 'proton/owner-id') -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open('x') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(str(uuid.uuid4()) + '\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        pass
+    value = path.read_text().strip()
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError as exc:
+        raise BackupError('Invalid local Proton backup owner identity') from exc
+    if parsed.version != 4 or str(parsed) != value:
+        raise BackupError('Invalid local Proton backup owner identity')
+    return value
+
+
 class Service:
-    def __init__(self, config):
+    def __init__(self, config: Configuration) -> None:
         self.config = config
-        self.cli = ProtonCli(config)
+        self.cli = ProtonCli(config, owner_id=load_owner_id())
         self.operations = threading.Lock()
         self.probe_guard = threading.Lock()
-        self.last_probe = 0
+        self.last_probe = 0.0
 
-    def schedule_probe(self):
+    def schedule_probe(self) -> None:
         if self.operations.locked() or self.cli.login is not None or time.monotonic() - self.last_probe < 30:
             return
         if not self.probe_guard.acquire(blocking=False):
             return
 
-        def probe():
+        def probe() -> None:
             try:
                 self.probe()
             finally:
@@ -36,19 +61,19 @@ class Service:
 
         threading.Thread(target=probe, daemon=True).start()
 
-    def probe(self):
+    def probe(self) -> dict[str, str]:
         try:
             return self.cli.probe()
-        except (BackupError, OSError, ValueError) as exc:
+        except (BackupError, OSError, ValueError, TypeError) as exc:
             if self.cli.auth['state'] != 'signed-out':
                 self.cli.auth['error'] = str(exc)
             return self.cli.status()
 
-    def dispatch(self, message):
+    def dispatch(self, message: dict[str, JSONValue]) -> object:
         operation = message.get('operation')
         if operation == 'status':
             self.schedule_probe()
-            return self.cli.status()
+            return {**self.cli.status(), **self.cli.transfer_status()}
         if operation == 'cancel-transfer':
             self.cli.cancel_transfer()
             return True
@@ -63,17 +88,19 @@ class Service:
         try:
             if operation == 'probe':
                 return self.cli.probe()
+            if operation not in ('prepare', 'upload', 'prune'):
+                raise BackupError('Unknown Proton operation')
             item = next((item for item in self.config['sets'] if item['uuid'] == message.get('setuuid')), None)
             if item is None:
                 raise BackupError('Unknown backup set')
             folder = remote_folder(self.config, item)
-            if operation == 'prepare':
-                self.cli.ensure_folder(folder)
-                return self.cli.list(folder)
+            path: Path | None = None
             if operation == 'upload':
                 name = message.get('name', '')
                 if not isinstance(name, str) or Path(name).name != name:
                     raise BackupError('Invalid archive name')
+                if not name.endswith('.tar.zst'):
+                    raise BackupError('Only completed archives may be uploaded')
                 directory = Path(self.config['stagingpath']) / item['uuid']
                 path = directory / name
                 for candidate in (path, path.with_name(name + '.manifest.json')):
@@ -84,26 +111,32 @@ class Service:
                         or candidate.resolve().parent != directory.resolve()
                     ):
                         raise BackupError('Uploads require root-owned completed staging files')
-                if not name.endswith('.tar.zst'):
-                    raise BackupError('Only completed archives may be uploaded')
+            self.cli.ensure_instance_owned()
+            if operation == 'prepare':
+                self.cli.ensure_folder(folder)
+                return self.cli.list(folder)
+            if operation == 'upload':
+                if path is None:
+                    raise BackupError('Missing validated upload path')
                 return upload_pair(self.cli, self.config, item, path, folder)
-            if operation == 'prune':
-                return prune_remote(self.cli, self.config, item, folder)
-            raise BackupError('Unknown Proton operation')
+            return prune_remote(self.cli, self.config, item, folder)
         finally:
             self.operations.release()
 
 
-def serve():
+def serve() -> None:
+    # The CLI uses SIG_DFL for broken stdout pipes. A disconnected IPC client
+    # must only fail its handler, never terminate the long-running daemon.
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     service = Service(load())
 
     class Handler(socketserver.StreamRequestHandler):
-        def handle(self):
+        def handle(self) -> None:
             try:
                 line = self.rfile.readline(LIMIT + 1)
                 if len(line) > LIMIT:
                     raise BackupError('Request too large')
-                message = json.loads(line)
+                message = decode(line)
                 if not isinstance(message, dict):
                     raise BackupError('Invalid request')
                 result = {'ok': True, 'result': service.dispatch(message)}

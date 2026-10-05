@@ -9,21 +9,25 @@ import shutil
 import signal
 import subprocess
 import tempfile
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import tyro
-import vm_banner
-import vm_runtime
-from console import print_exception
-from process_output import ProcessOutput
-from process_signals import termination_signals
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+import vm_banner
+import vm_runtime
+from cli_options import parse_options
+from console import print_exception
+from process_output import ProcessOutput
+from process_signals import TerminationRequested, termination_signals
+from tool_data import decode, integer, string
 from vm_control import VMState
+
+GUEST_TOOLS = '/usr/local/lib/omv-protondrive-vm'
 
 
 @dataclass
@@ -34,8 +38,8 @@ class Options:
     cache_dir: Path = Path('.tmp/vm-cache')
     image: Path | None = None
     package: Path | None = None
-    guest_just: Path | None = None
-    """Static just executable supplied by Nix for guest development commands."""
+    guest_bundle: Path | None = None
+    """Built VM-only tools archive, including just and the live-test helpers."""
     ssh_port: int | None = None
     """Local SSH port; initially 2222, then the saved port."""
     http_port: int | None = None
@@ -52,7 +56,7 @@ class Options:
     in_clanker: bool = False
 
 
-def runtime_options(options: Options, state: VMState):
+def runtime_options(options: Options, state: VMState) -> vm_runtime.Options:
     if options.image is None or options.package is None:
         raise ValueError('Use just vm::up or just vm::install to supply the Nix-built image and package')
     return vm_runtime.Options(
@@ -65,7 +69,7 @@ def runtime_options(options: Options, state: VMState):
     )
 
 
-def create(options: Options, state: VMState, output: ProcessOutput):
+def create(options: Options, state: VMState, output: ProcessOutput) -> None:
     if state.instance.exists():
         state.read()
         return
@@ -101,7 +105,7 @@ def create(options: Options, state: VMState, output: ProcessOutput):
         password_file = directory / 'admin-password'
         password_file.write_text(password + '\n')
         password_file.chmod(0o600)
-        remote = f'/my-files/OMV Integration {uuid.uuid4().hex[:12]}'
+        remote = '/my-files/open-media-vault-proton-backup-development'
         configuration = directory / 'interactive-init.json'
         configuration.write_text(json.dumps({'admin_password': password, 'remote_folder': remote}) + '\n')
         configuration.chmod(0o600)
@@ -115,20 +119,20 @@ def create(options: Options, state: VMState, output: ProcessOutput):
         directory.rename(state.instance)
 
 
-def connection(state: VMState):
+def connection(state: VMState) -> vm_runtime.Guest:
     metadata = state.read()
-    return vm_runtime.guest_connection(state.instance, state.instance / 'key', metadata['ssh_port'])
+    return vm_runtime.guest_connection(state.instance, state.instance / 'key', integer(metadata['ssh_port']))
 
 
-def stop(state: VMState, *, force=False):
+def stop(state: VMState, *, force: bool = False) -> None:
     # OMV intentionally ignores ACPI power-button events; ask systemd directly.
-    state.stop(
-        force=force,
-        request_shutdown=lambda: connection(state).run('systemctl', 'poweroff', '--no-block', timeout=15),
-    )
+    def request_shutdown() -> None:
+        connection(state).run('systemctl', 'poweroff', '--no-block', timeout=15)
+
+    state.stop(force=force, request_shutdown=request_shutdown)
 
 
-def describe(state: VMState, output: ProcessOutput, status: str):
+def describe(state: VMState, output: ProcessOutput, status: str) -> None:
     metadata = state.read()
     console = output.console
     details = Table.grid(padding=(0, 2))
@@ -138,7 +142,7 @@ def describe(state: VMState, output: ProcessOutput, status: str):
     details.add_row('Web', Text(f'http://127.0.0.1:{metadata["http_port"]}/', style='bold blue'))
     details.add_row('Login', Text.assemble(('admin / admin', 'bold'), (' (default)', 'dim')))
     details.add_row('Recipes', Text('/root/justfile', style='blue'))
-    details.add_row('Remote', Text(metadata['remote_folder'], style='blue'))
+    details.add_row('Remote', Text(string(metadata['remote_folder']), style='blue'))
     details.add_row('State', Text(str(state.instance), style='blue'))
     console.print(Panel(details, title='OMV TEST VM', border_style='dim', expand=False))
     console.print()
@@ -152,28 +156,50 @@ def describe(state: VMState, output: ProcessOutput, status: str):
         console.print(Text(shlex.join(['--state-dir', str(state.root)]), style='blue'))
 
 
-def setup_shell(options: Options, state: VMState):
-    if options.guest_just is None:
-        raise ValueError('Use the Nix VM apps to supply the guest just executable')
-    binary = options.guest_just.resolve(strict=True)
+def setup_shell(options: Options, state: VMState) -> None:
+    if options.guest_bundle is None:
+        raise ValueError('Use the Nix VM apps to supply the built guest tools archive')
+    bundle = options.guest_bundle.resolve(strict=True)
     guest = connection(state)
     with state.lock('shell'):
         guest.run('test', '-f', '/var/lib/protondrive-interactive-vm')
-        guest.copy(
-            binary,
-            vm_runtime.SOURCE / 'tests/integration/guest.just',
-            vm_runtime.SOURCE / 'tests/integration/guest-profile.sh',
-            vm_runtime.SOURCE / 'tests/integration/guest-recipe.sh',
-            vm_runtime.SOURCE / 'tests/integration/guest_commands.py',
-            vm_runtime.SOURCE / 'tools/vm_banner.py',
-        )
-        guest.run('install', '-m', '0755', f'/root/{binary.name}', '/usr/local/bin/just')
-        guest.run('install', '-m', '0644', '/root/guest.just', '/root/justfile')
-        guest.run('install', '-m', '0644', '/root/guest-profile.sh', '/etc/profile.d/omv-protondrive-dev.sh')
+        version = bundle.parent.name
+        marker = f'{GUEST_TOOLS}/.bundle-id'
+        current = guest.run('cat', marker, check=False, capture_output=True, text=True)
+        if current.returncode == 0 and current.stdout.strip() == version:
+            return
+        guest.copy(bundle)
+        guest.run('install', '-d', '-m', '0755', '/usr/local/lib')
+        directory = guest.run(
+            'mktemp',
+            '-d',
+            '-p',
+            '/usr/local/lib',
+            f'omv-protondrive-vm.{version}.XXXXXX',
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if not directory.startswith(f'{GUEST_TOOLS}.'):
+            raise RuntimeError('The guest did not create a VM tools directory')
+        guest.run('tar', '-xf', f'/root/{bundle.name}', '-C', directory, '--strip-components=1')
+        guest.run('chmod', '0755', directory)
+        # Older VMs used a real directory at this path. Move it aside once;
+        # subsequent upgrades replace the symlink atomically.
+        if (
+            guest.run('test', '-d', GUEST_TOOLS, check=False).returncode == 0
+            and guest.run('test', '-L', GUEST_TOOLS, check=False).returncode != 0
+        ):
+            guest.run('mv', '-T', GUEST_TOOLS, f'{GUEST_TOOLS}.legacy')
+        guest.run('ln', '-sfn', directory, f'{GUEST_TOOLS}.next')
+        guest.run('mv', '-Tf', f'{GUEST_TOOLS}.next', GUEST_TOOLS)
+        guest.run('ln', '-sfn', f'{GUEST_TOOLS}/just', '/usr/local/bin/just')
+        guest.run('ln', '-sfn', f'{GUEST_TOOLS}/guest.just', '/root/justfile')
+        guest.run('ln', '-sfn', f'{GUEST_TOOLS}/guest-profile.sh', '/etc/profile.d/omv-protondrive-dev.sh')
         guest.run('touch', '/root/.hushlogin')
+        guest.run('tee', marker, input=version + '\n', text=True, capture_output=True)
 
 
-def open_shell(options: Options, state: VMState, output: ProcessOutput):
+def open_shell(options: Options, state: VMState, output: ProcessOutput) -> int:
     if state.running() is None:
         raise RuntimeError('VM is stopped; run just vm::up first')
     setup_shell(options, state)
@@ -182,7 +208,7 @@ def open_shell(options: Options, state: VMState, output: ProcessOutput):
     return subprocess.run(['ssh', '-t', *connection(state).ssh[1:]], check=False).returncode
 
 
-def install(options: Options, state: VMState, output: ProcessOutput):
+def install(options: Options, state: VMState, output: ProcessOutput) -> None:
     if options.package is None:
         raise ValueError('Use just vm::install to supply the Nix-built package')
     package = options.package.resolve(strict=True)
@@ -193,26 +219,35 @@ def install(options: Options, state: VMState, output: ProcessOutput):
         guest = connection(state)
         # A previous disconnected install may still own a remote service.
         guest.ensure_idle()
-        script = vm_runtime.SOURCE / 'tests/integration/interactive_guest.py'
+        setup_shell(options, state)
         with output.stage('Install plugin in interactive VM'):
-            guest.copy(script, script.with_name('interactive-vm.css'), vm_runtime.SOURCE / 'tools/console.py', package)
+            guest.copy(package)
             arguments = [f'/root/{package.name}']
             if not metadata['initialized']:
                 guest.copy(state.instance / 'interactive-init.json')
                 arguments.append('/root/interactive-init.json')
-            guest.python(output, '/root/interactive_guest.py', state.root / 'logs/install.log', 1800, *arguments)
+            guest.python(
+                output, f'{GUEST_TOOLS}/interactive_guest.py', state.root / 'logs/install.log', 1800, *arguments
+            )
+            settings = decode(
+                guest.run(
+                    'omv-confdbadm', 'read', 'conf.service.protondrive', capture_output=True, text=True, timeout=15
+                ).stdout
+            )
+            instance_uuid = string(settings['instanceuuid'])
+            if metadata.get('proton_instance_uuid') not in (None, instance_uuid):
+                raise RuntimeError('The VM changed its Proton backup instance UUID during reinstall')
+            metadata['proton_instance_uuid'] = instance_uuid
             metadata['initialized'] = True
             state.write(metadata)
             (state.instance / 'interactive-init.json').unlink(missing_ok=True)
-        setup_shell(options, state)
 
 
-def up(options: Options, state: VMState, output: ProcessOutput):
+def up(options: Options, state: VMState, output: ProcessOutput) -> None:
     with state.lock():
         if state.running() is not None:
             metadata = state.read()
-            for key in ('ssh_port', 'http_port'):
-                requested = getattr(options, key)
+            for key, requested in (('ssh_port', options.ssh_port), ('http_port', options.http_port)):
                 if requested is not None and requested != metadata[key]:
                     raise ValueError('Stop the VM before changing its forwarded ports')
             if not metadata['initialized']:
@@ -231,7 +266,7 @@ def up(options: Options, state: VMState, output: ProcessOutput):
         command = vm_runtime.qemu_command(
             state.instance,
             reports / 'serial.log',
-            {22: metadata['ssh_port'], 80: metadata['http_port']},
+            {22: integer(metadata['ssh_port']), 80: integer(metadata['http_port'])},
         )
         command.extend(['-daemonize', '-qmp', f'unix:{state.monitor},server=on,wait=off'])
         with (reports / 'qemu.log').open('a') as log:
@@ -247,7 +282,7 @@ def up(options: Options, state: VMState, output: ProcessOutput):
             runtime,
             state.instance,
             state.instance / 'key',
-            metadata['ssh_port'],
+            integer(metadata['ssh_port']),
             None,
             output,
             '',
@@ -259,7 +294,7 @@ def up(options: Options, state: VMState, output: ProcessOutput):
             install(options, state, output)
 
 
-def reset(options: Options, state: VMState, output: ProcessOutput):
+def reset(options: Options, state: VMState, output: ProcessOutput) -> None:
     if not options.yes:
         raise ValueError('Reset deletes the local VM disk and Proton session. Stop the VM, then use vm::reset --yes')
     with state.lock():
@@ -274,7 +309,7 @@ def reset(options: Options, state: VMState, output: ProcessOutput):
     )
 
 
-def snapshot(options: Options, state: VMState, output: ProcessOutput, *, restore=False):
+def snapshot(options: Options, state: VMState, output: ProcessOutput, *, restore: bool = False) -> None:
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', options.snapshot_name):
         raise ValueError('Snapshot names must be 1–64 letters, digits, dots, underscores, or hyphens')
     with state.lock():
@@ -292,7 +327,7 @@ def snapshot(options: Options, state: VMState, output: ProcessOutput, *, restore
 
 
 @termination_signals()
-def main(options: Options):
+def main(options: Options) -> None:
     output = ProcessOutput(no_color=options.no_color, in_clanker=options.in_clanker)
     state = VMState(options.state_dir.resolve())
     try:
@@ -326,18 +361,18 @@ def main(options: Options):
             snapshot(options, state, output, restore=options.action == 'restore')
         elif state.metadata.exists():
             status = state.running()
-            describe(state, output, status['status'].upper() if status else 'STOPPED')
+            describe(state, output, string(status['status']).upper() if status else 'STOPPED')
         else:
             output.console.print('VM: NOT CREATED; run just vm::up')
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
         print_exception(no_color=options.no_color, in_clanker=options.in_clanker)
         raise SystemExit(1) from None
     except KeyboardInterrupt as error:
         output.console.print(
             'Interrupted; the VM is not shut down. Check just vm::status; use just vm::down to shut it down.'
         )
-        raise SystemExit(128 + getattr(error, 'signum', signal.SIGINT)) from None
+        raise SystemExit(128 + (error.signum if isinstance(error, TerminationRequested) else signal.SIGINT)) from None
 
 
 if __name__ == '__main__':
-    main(tyro.cli(Options))
+    main(parse_options(Options))

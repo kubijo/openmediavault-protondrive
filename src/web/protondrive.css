@@ -71,8 +71,33 @@ omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-a
     padding-top: 20px;
 }
 
+/* Match OMV's themed button rule so gap also owns spacing at wrapped row ends. */
+omv-intuition-form-page
+    > mat-card.mat-card:has(.protondrive-status-heading)
+    > mat-card-actions.mat-card-actions
+    > button.mat-button-base {
+    margin: 0;
+}
+
 omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button {
     flex-shrink: 0;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button:not(:disabled) {
+    background-color: var(--mat-background-color-background);
+    border-color: color-mix(in srgb, currentColor 28%, transparent);
+}
+
+omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button:not(:disabled):hover {
+    background-color: color-mix(in srgb, currentColor 8%, var(--mat-background-color-background));
+}
+
+omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
 }
 
 @media (max-width: 600px) {
@@ -81,8 +106,7 @@ omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-a
     }
 
     omv-intuition-form-page > mat-card:has(.protondrive-status-heading) > mat-card-actions > button {
-        /* OMV keeps an 8px button margin; allow for it and the footer gap. */
-        flex: 1 1 calc(50% - 20px);
+        flex: 1 1 calc(50% - 4px);
         min-width: 0;
         height: auto;
         min-height: 40px;

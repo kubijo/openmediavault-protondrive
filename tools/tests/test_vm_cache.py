@@ -1,11 +1,8 @@
 """Check VM cache publication, disk isolation, and orchestration without booting guests."""
 
 import contextlib
-import importlib.util
 import io
-import json
 import subprocess
-import sys
 import tempfile
 import threading
 import unittest
@@ -13,20 +10,15 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from rich.console import Console
+from tests.integration import provision_guest as provision
+
 import vm_runtime
 from process_output import ProcessOutput
-from rich.console import Console
+from tool_data import decode
 from vm_cache import BaseCache, fingerprint
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def load_guest_module(name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / 'tests/integration' / f'{name}.py')
-    module = importlib.util.module_from_spec(spec)
-    with patch.dict(sys.modules, {name: module}):
-        spec.loader.exec_module(module)
-    return module
 
 
 class CacheTests(unittest.TestCase):
@@ -35,7 +27,11 @@ class CacheTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.cache = BaseCache(self.root, {'image': 'debian', 'provision': 'v1'})
-        self.build = Mock(side_effect=lambda path: path.write_bytes(b'base image'))
+
+        def build(path: Path) -> None:
+            path.write_bytes(b'base image')
+
+        self.build = Mock(side_effect=build)
 
     def test_reuses_matching_complete_image(self):
         first, built = self.cache.ensure(self.build)
@@ -55,7 +51,11 @@ class CacheTests(unittest.TestCase):
     def test_refresh_keeps_old_backing_file_immutable(self):
         original, _ = self.cache.ensure(self.build)
         digest = fingerprint(original)
-        replacement, built = self.cache.ensure(lambda path: path.write_bytes(b'new base'), refresh=True)
+
+        def build(path: Path) -> None:
+            path.write_bytes(b'new base')
+
+        replacement, built = self.cache.ensure(build, refresh=True)
         self.assertTrue(built)
         self.assertNotEqual(original, replacement)
         self.assertEqual(fingerprint(original), digest)
@@ -64,7 +64,7 @@ class CacheTests(unittest.TestCase):
     def test_failed_refresh_never_publishes_partial_image(self):
         original, _ = self.cache.ensure(self.build)
 
-        def fail(path):
+        def fail(path: Path) -> None:
             path.write_bytes(b'incomplete')
             raise RuntimeError('provisioning failed')
 
@@ -91,21 +91,21 @@ class CacheTests(unittest.TestCase):
     def test_concurrent_requests_build_once(self):
         barrier = threading.Barrier(2)
 
-        def request():
+        def request(_: int) -> tuple[Path, bool]:
             barrier.wait(timeout=5)
             return BaseCache(self.root, self.cache.inputs).ensure(self.build)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            first, second = list(pool.map(lambda _: request(), range(2)))
+            first, second = list(pool.map(request, range(2)))
         self.assertEqual(first[0], second[0])
         self.assertEqual(sorted((first[1], second[1])), [False, True])
         self.build.assert_called_once()
 
     def test_real_qcow_overlays_do_not_modify_cached_base(self):
-        def command(*args):
+        def command(*args: str) -> subprocess.CompletedProcess[str]:
             return subprocess.run(args, check=True, capture_output=True, text=True)
 
-        def build(path):
+        def build(path: Path) -> None:
             command('qemu-img', 'create', '-f', 'qcow2', str(path), '1M')
 
         base, _ = self.cache.ensure(build)
@@ -115,7 +115,7 @@ class CacheTests(unittest.TestCase):
             command('qemu-img', 'create', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(overlay))
             command('qemu-io', '-f', 'qcow2', '-c', 'read -P 0 0 512', str(overlay))
             command('qemu-io', '-f', 'qcow2', '-c', 'write -P 42 0 512', str(overlay))
-            info = json.loads(command('qemu-img', 'info', '--output=json', str(overlay)).stdout)
+            info = decode(command('qemu-img', 'info', '--output=json', str(overlay)).stdout)
             self.assertEqual(info['full-backing-filename'], str(base))
         self.assertEqual(fingerprint(base), digest)
 
@@ -132,21 +132,25 @@ class OrchestrationTests(unittest.TestCase):
         package.write_bytes(b'plugin')
         self.options = self.vm.Options(image=image, package=package, cache_dir=self.root / 'cache', reports=self.root)
         self.output = ProcessOutput(in_clanker=True)
-        self.output.console = Console(file=io.StringIO(), color_system=None)
+        self.buffer = io.StringIO()
+        self.output.console = Console(file=self.buffer, color_system=None)
 
     def test_cache_hit_still_boots_fresh_guest_and_runs_tests(self):
-        guests = []
+        guests: list[Mock] = []
 
         @contextlib.contextmanager
-        def boot(*args, **kwargs):
+        def boot(*args: object, **kwargs: object):
             guest = Mock()
             guests.append(guest)
             yield guest
 
+        def build(path: Path, *args: object) -> None:
+            path.write_bytes(b'base')
+
         with (
             patch.object(self.vm, 'run', return_value=Mock(stdout='python3 (>= 3.11)')),
             patch.object(self.vm, 'base_inputs', return_value={'image': 'debian'}),
-            patch.object(self.vm, 'build_base', side_effect=lambda path, *args: path.write_bytes(b'base')) as build,
+            patch.object(self.vm, 'build_base', side_effect=build) as build,
             patch.object(self.vm, 'boot', side_effect=boot),
             patch.object(self.vm, 'provision') as provision,
             patch.object(self.vm, 'test_guest') as test_guest,
@@ -159,7 +163,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(test_guest.call_count, 2)
         self.assertEqual(len(guests), 2)
         self.assertIsNot(guests[0], guests[1])
-        self.assertIn('CACHE HIT', self.output.console.file.getvalue())
+        self.assertIn('CACHE HIT', self.buffer.getvalue())
 
     def test_no_cache_provisions_without_touching_cache(self):
         self.options.no_cache = True
@@ -193,7 +197,7 @@ class OrchestrationTests(unittest.TestCase):
 
     def test_failed_shutdown_does_not_convert_or_publish(self):
         guest = Mock()
-        guest.process.wait.return_value = 1
+        guest = Mock(process=Mock(wait=Mock(return_value=1)))
         with (
             patch.object(self.vm, 'boot', return_value=contextlib.nullcontext(guest)),
             patch.object(self.vm, 'provision'),
@@ -204,7 +208,6 @@ class OrchestrationTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_provisioning_refuses_to_run_outside_disposable_guest(self):
-        provision = load_guest_module('provision_guest')
         with (
             patch.object(provision.Path, 'exists', return_value=False),
             patch.object(provision.subprocess, 'run') as run,
@@ -214,14 +217,17 @@ class OrchestrationTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_seal_removes_identity_then_schedules_shutdown_without_new_ssh(self):
-        provision = load_guest_module('provision_guest')
         files = ('etc/machine-id', 'etc/ssh/ssh_host_ed25519_key', 'root/.ssh/authorized_keys')
         for name in files:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('old identity')
+
+        def fixture_path(name: str) -> Path:
+            return self.root / name.lstrip('/')
+
         with (
-            patch.object(provision, 'Path', side_effect=lambda name: self.root / name.lstrip('/')),
+            patch.object(provision, 'Path', side_effect=fixture_path),
             patch.object(provision.subprocess, 'run', return_value=Mock(stdout='')) as run,
             patch.object(provision.os, 'sync'),
             contextlib.redirect_stdout(io.StringIO()),

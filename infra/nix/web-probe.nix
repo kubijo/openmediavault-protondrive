@@ -1,6 +1,7 @@
 {
   pkgs,
   src,
+  vmCommand,
 }:
 let
   inherit (builtins) elemAt fromJSON readFile;
@@ -17,7 +18,7 @@ let
     src = probeSrc;
     inherit pnpm;
     fetcherVersion = 4;
-    hash = "sha256-vUng8a4P3QlQ6dTYRf3VvJsiDos+saTtPUteTlnpSrY=";
+    hash = "sha256-02VPMxsLfbzdKcvjW3kL/9IAHOjuA+5bHrYVuAIcAcs=";
   };
   # pnpm 12 records the package-manager pin in a second YAML document.
   # pnpmConfigHook's pm_on_fail=ignore makes pnpm reject that native lockfile.
@@ -38,6 +39,8 @@ let
     buildPhase = ''
       runHook preBuild
       pnpm typecheck
+      pnpm test
+      PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers} pnpm test:browser
       runHook postBuild
     '';
     installPhase = ''
@@ -49,10 +52,13 @@ let
   };
   probe = pkgs.writeShellApplication {
     name = "protondrive-web-probe";
-    runtimeInputs = [ nodejs ];
+    runtimeInputs = [
+      nodejs
+      pkgs.bash
+    ];
     text = ''
       export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
-      export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+      export PROTONDRIVE_VM_COMMAND=${vmCommand}
       exec node ${checked}/lib/web-probe/src/main.ts "$@"
     '';
   };

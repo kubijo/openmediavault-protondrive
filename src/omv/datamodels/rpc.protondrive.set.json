@@ -30,7 +30,7 @@
       },
       "remotepath": {
         "type": "string",
-        "default": "/my-files/OMV Backups",
+        "default": "/my-files/open-media-vault-proton-backup",
         "required": true
       },
       "instanceuuid": {

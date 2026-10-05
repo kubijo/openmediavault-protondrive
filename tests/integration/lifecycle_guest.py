@@ -1,29 +1,30 @@
 """Verify the real Docker/systemd recovery boundary in the disposable OMV guest."""
 
 import io
-import json
 import shutil
 import subprocess
 import tarfile
 import time
+from collections.abc import Callable
 from pathlib import Path
+
+if __package__:
+    from .guest_support import decode, items, run
+else:
+    from guest_support import decode, items, run
 
 STATE = Path('/var/lib/openmediavault-protondrive')
 BACKUP = 'omv-protondrive-backup.service'
 
 
-def run(*args: str, **kwargs):
-    return subprocess.run(args, check=True, **kwargs)
-
-
-def running(name):
+def running(name: str) -> bool:
     return (
         run('docker', 'inspect', '--format', '{{.State.Running}}', name, capture_output=True, text=True).stdout.strip()
         == 'true'
     )
 
 
-def wait_for(predicate, message):
+def wait_for(predicate: Callable[[], bool], message: str) -> None:
     deadline = time.monotonic() + 45
     while not predicate():
         if time.monotonic() > deadline:
@@ -58,8 +59,8 @@ def main():
         wait_for(marker.exists, 'The fixture failed to stop containers')
         assert not running('originally-running')
         assert not running('originally-stopped')
-        record = json.loads((STATE / 'recovery.json').read_text())
-        assert len(record['ids']) == 1
+        record = decode((STATE / 'recovery.json').read_text())
+        assert len(items(record['ids'])) == 1
         run('systemctl', 'kill', '--kill-whom=main', f'--signal={signum}', BACKUP)
         wait_for(lambda: not (STATE / 'recovery.json').exists(), 'Recovery record was not cleared')
         assert running('originally-running')

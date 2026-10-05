@@ -5,12 +5,13 @@ import shutil
 import tempfile
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
 from helpers import configuration
-
 from protondrive import cli as commands
+from protondrive.json_data import decode, object_value
 from protondrive.protoncli import ProtonCli
 
 
@@ -30,11 +31,11 @@ class AuthTests(unittest.TestCase):
                 contextlib.redirect_stdout(output),
             ):
                 commands.main()
-            value = json.loads(output.getvalue())
+            value = object_value(decode(output.getvalue()))
             self.assertEqual(value['accountemail'], 'test@example.org')
             self.assertEqual(value['accountorganization'], 'Test team')
 
-    def client(self, delay):
+    def client(self, delay: float) -> ProtonCli:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         binary = Path(temp.name) / 'fake_proton_auth.py'
@@ -46,7 +47,7 @@ class AuthTests(unittest.TestCase):
         self.addCleanup(cli.cancel_auth)
         return cli
 
-    def wait_for(self, predicate):
+    def wait_for(self, predicate: Callable[[], bool]) -> None:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             if predicate():
@@ -82,6 +83,7 @@ class AuthTests(unittest.TestCase):
         cli.start_auth()
         self.wait_for(lambda: bool(cli.status()['url']))
         proc = cli.login
+        assert proc is not None
         cli.cancel_auth()
         self.assertIsNotNone(proc.poll())
         self.assertEqual(cli.status()['url'], '')

@@ -41,10 +41,12 @@ data:
           required: true
       - type: textInput
         name: remotepath
-        label: _("Proton Drive folder")
-        value: /my-files/OMV Backups
+        label: _("Proton Drive root folder")
+        hint: _("One folder directly under /my-files. Change its name here to use a different destination.")
+        value: /my-files/open-media-vault-proton-backup
         validators:
           required: true
+          pattern: '^/my-files/(?!\.{1,2}$)(?!-)[A-Za-z0-9 _.-]+$'
       - type: numberInput
         name: minimumfreebytes
         label: _("Minimum free staging space (bytes)")

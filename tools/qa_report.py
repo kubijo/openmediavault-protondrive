@@ -2,12 +2,15 @@
 
 import json
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
-from console import new_console, plain_output
 from rich import box
+from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+
+from console import new_console, plain_output
 
 
 @dataclass
@@ -32,12 +35,12 @@ STYLES = {
 }
 
 
-def display_name(result):
+def display_name(result: Result) -> str:
     prefixes = {'Nix inputs': 'flake input: ', 'Python dependencies': 'python dependency: ', 'GitHub CI': 'action: '}
     return result.name.removeprefix(prefixes.get(result.domain, ''))
 
 
-def rich_section(console, domain, components):
+def rich_section(console: Console, domain: str, components: Sequence[Result]) -> None:
     table = Table(
         'Component',
         'State',
@@ -69,7 +72,7 @@ def rich_section(console, domain, components):
     console.print()
 
 
-def rich_summary(console, label, state, counts):
+def rich_summary(console: Console, label: str, state: str, counts: str) -> None:
     console.print(Text('Summary', style='bold'))
     console.print(
         Text(f'{label}: {state} ({counts})', style=f'bold {STYLES.get(state.lower(), "")}'),
@@ -77,9 +80,9 @@ def rich_summary(console, label, state, counts):
     )
 
 
-def rich_report(results, label, state, counts, no_color):
+def rich_report(results: Sequence[Result], label: str, state: str, counts: str, no_color: bool) -> None:
     console = new_console(no_color=no_color)
-    domains = {}
+    domains: dict[str, list[Result]] = {}
     for result in results:
         domains.setdefault(result.domain, []).append(result)
     for domain, components in domains.items():
@@ -87,7 +90,7 @@ def rich_report(results, label, state, counts, no_color):
     rich_summary(console, label, state, counts)
 
 
-def plain_results(results):
+def plain_results(results: Sequence[Result]) -> None:
     for result in results:
         versions = f' ({result.current} -> {result.latest})' if result.latest else ''
         print(f'{result.name}: {result.state}{versions}', flush=True)
@@ -101,7 +104,7 @@ def plain_results(results):
             print('  ' + '\n  '.join(lines), flush=True)
 
 
-def summary(results):
+def summary(results: Sequence[Result]) -> tuple[str, int, dict[str, int]]:
     counts = dict(sorted(Counter(result.state for result in results).items()))
     if not results or counts.get('error') or counts.get('unknown'):
         return 'ERROR', 2, counts
@@ -112,7 +115,9 @@ def summary(results):
     return 'PASSED', 0, counts
 
 
-def report(results, *, json_output=False, no_color=False, in_clanker=False):
+def report(
+    results: Sequence[Result], *, json_output: bool = False, no_color: bool = False, in_clanker: bool = False
+) -> int:
     state, code, counts = summary(results)
     label = 'AUDIT'
     count_text = ', '.join(f'{n} {s}' for s, n in counts.items())

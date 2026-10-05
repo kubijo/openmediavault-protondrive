@@ -7,47 +7,62 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from helpers import configuration
-
 from protondrive import runner
 from protondrive.common import BackupError
+from protondrive.json_data import decode, object_value
+from protondrive.models import BackupSet
 
 
 class RunnerTests(unittest.TestCase):
-    def exercise(self, fail=False):
+    def test_phase_changes_clear_stale_item_but_keep_run_details(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(runner, 'STATE', Path(temporary)):
+            runner.status('uploading', message='archive.tar.zst', lastsuccess='previous')
+            runner.status('retention')
+            value = object_value(decode((Path(temporary) / 'status.json').read_text()))
+            self.assertEqual(value['message'], '')
+            self.assertEqual(value['lastsuccess'], 'previous')
+
+    def exercise(self, fail: bool = False) -> None:
         with tempfile.TemporaryDirectory() as temporary, contextlib.ExitStack() as stack:
             root = Path(temporary)
             config, item = configuration()
             config['stagingpath'] = str(root / 'staging')
             item['stopcontainers'] = True
-            events = []
-            recovery = Mock()
-            recovery.stop.side_effect = lambda *args: events.append('stop')
-            recovery.restore.side_effect = lambda: events.append('restore')
+            events: list[str] = []
 
-            def archive(item, path, reserve):
+            def stop(timeout: int) -> None:
+                events.append('stop')
+
+            recovery = Mock(stop=stop, restore=lambda: events.append('restore'))
+
+            def archive(item: BackupSet, path: Path, reserve: int) -> None:
                 events.append('archive')
                 path.write_bytes(b'partial')
                 if fail:
                     raise BackupError('injected tar failure')
 
-            def publish(item, path, *args):
+            def publish(item: BackupSet, path: Path, *args: object) -> Path:
                 events.append('publish')
                 final = path.with_suffix('')
                 path.rename(final)
                 return final
 
-            for name, value in [
+            def upload(*args: object) -> None:
+                events.append('upload')
+
+            replacements: list[tuple[str, object]] = [
                 ('STATE', root),
                 ('load', lambda: config),
                 ('Recovery', lambda: recovery),
-                ('estimate', lambda item: 1),
+                ('estimate', Mock(return_value=1)),
                 ('check_space', Mock()),
                 ('archive', archive),
                 ('publish', publish),
                 ('prune_local', Mock()),
-                ('request', lambda *a, **kw: []),
-                ('upload', lambda *a: events.append('upload')),
-            ]:
+                ('request', Mock(return_value=[])),
+                ('upload', Mock(side_effect=upload)),
+            ]
+            for name, value in replacements:
                 stack.enter_context(patch.object(runner, name, value))
             stack.enter_context(patch('signal.signal'))
             stack.enter_context(patch('grp.getgrnam', return_value=SimpleNamespace(gr_gid=0)))

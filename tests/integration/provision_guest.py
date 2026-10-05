@@ -17,7 +17,7 @@ PACKAGES = (
 )
 
 
-def run(*args):
+def run(*args: str) -> subprocess.CompletedProcess[bytes]:
     print('RUN', args, flush=True)
     return subprocess.run(args, check=True)
 

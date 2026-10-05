@@ -3,31 +3,36 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import configuration
-
 from protondrive.common import BackupError
+from protondrive.models import Manifest, RemoteEntry
 from protondrive.retention import upload_pair
 
 
 class Remote:
     def __init__(self):
-        self.files = {}
-        self.uploaded = []
+        self.files: dict[str, bytes] = {}
+        self.uploaded: list[str] = []
         self.fail_upload = False
 
-    def list(self, _folder):
+    def list(self, path: str) -> list[RemoteEntry]:
         return [{'name': name, 'type': 'file', 'size': len(data), 'uid': name} for name, data in self.files.items()]
 
-    def upload(self, path, _folder):
+    def upload(self, path: str | Path, folder: str) -> None:
+        path = Path(path)
         if self.fail_upload:
             raise BackupError('Injected interruption')
         self.files[path.name] = path.read_bytes()
         self.uploaded.append(path.name)
 
-    def download(self, remote, directory):
+    def download(self, remote: str, directory: str | Path) -> None:
         name = Path(remote).name
         (Path(directory) / name).write_bytes(self.files[name])
+
+    def trash(self, folder: str, entry: RemoteEntry) -> None:
+        del self.files[entry['name']]
 
 
 class UploadTests(unittest.TestCase):
@@ -38,7 +43,7 @@ class UploadTests(unittest.TestCase):
         self.config['minimumfreebytes'] = 0
         self.archive = Path(temporary.name) / 'appData-20261001T0300Z.tar.zst'
         self.archive.write_bytes(b'archive fixture')
-        self.value = {
+        self.value: Manifest = {
             'format': 1,
             'instanceuuid': self.config['instanceuuid'],
             'setuuid': self.item['uuid'],
@@ -72,11 +77,36 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(self.remote.uploaded, [self.manifest.name])
 
     def test_same_size_different_content_never_gets_completion_marker(self):
-        self.remote.files[self.archive.name] = b'x' * self.value['size']
+        size = self.value['size']
+        assert isinstance(size, int)
+        self.remote.files[self.archive.name] = b'x' * size
         with self.assertRaises(BackupError):
             self.upload()
         self.assertEqual(self.remote.uploaded, [])
         self.assertNotIn(self.manifest.name, self.remote.files)
+
+    def test_upload_skip_race_cannot_publish_a_foreign_archive(self):
+        uploaded = self.remote.upload
+
+        def skip_after_foreign_file(path: Path, folder: str) -> None:
+            if path.name == self.archive.name:
+                self.remote.files[path.name] = b'x' * self.archive.stat().st_size
+            else:
+                uploaded(path, folder)
+
+        with (
+            patch.object(self.remote, 'upload', side_effect=skip_after_foreign_file),
+            self.assertRaisesRegex(BackupError, 'checksum'),
+        ):
+            self.upload()
+        self.assertNotIn(self.manifest.name, self.remote.files)
+
+    def test_corrupt_completed_pair_is_not_accepted_as_idempotent(self):
+        self.upload()
+        self.remote.files[self.archive.name] = b'x' * self.archive.stat().st_size
+        with self.assertRaisesRegex(BackupError, 'checksum'):
+            self.upload()
+        self.assertEqual(self.remote.uploaded, [self.archive.name, self.manifest.name])
 
     def test_changed_local_archive_never_uploads(self):
         self.archive.write_bytes(b'changed archive')

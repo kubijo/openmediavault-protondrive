@@ -7,16 +7,18 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
+
+if __package__:
+    from .guest_support import decode, items, mapping, run, string
+else:
+    from guest_support import decode, items, mapping, run, string
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 INSTALL_MODULES = ('monit', 'nginx', 'phpfpm', 'protondrive')
 DIRTY_MODULES = Path('/var/lib/openmediavault/dirtymodules.json')
-
-
-def run(*args, **kwargs):
-    print('RUN', args, flush=True)
-    return subprocess.run(args, check=True, **kwargs)
 
 
 def setup_traceback():
@@ -30,7 +32,7 @@ def setup_traceback():
         install_traceback()
 
 
-def rpc(method, params=None):
+def rpc(method: str, params: Mapping[str, object] | None = None) -> dict[str, object]:
     result = run(
         'omv-rpc',
         '-u',
@@ -41,11 +43,11 @@ def rpc(method, params=None):
         capture_output=True,
         text=True,
     )
-    return json.loads(result.stdout)
+    return decode(result.stdout)
 
 
 def initialize(configuration: Path):
-    settings = json.loads(configuration.read_text())
+    settings = decode(configuration.read_text())
     # Send the initial web password over stdin, never through argv or logs.
     run('chpasswd', input=f'admin:{settings["admin_password"]}\n', text=True)
     for device in ('desktop', 'mobile'):
@@ -61,10 +63,11 @@ def initialize(configuration: Path):
     plugin.update(enable=False, remotepath=settings['remote_folder'])
     rpc('set', plugin)
     sets = rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'})
-    for item in sets['data']:
+    for raw in items(sets['data']):
+        item = mapping(raw)
         if item['name'] not in ('system', 'appData'):
             raise RuntimeError('Unexpected backup set in fresh interactive VM')
-        directory = Path('/data/interactive-fixtures') / item['name']
+        directory = Path('/data/interactive-fixtures') / string(item['name'])
         directory.mkdir(parents=True, exist_ok=True)
         (directory / 'example.txt').write_text('Disposable OMV integration fixture.\n')
         item.update(paths=str(directory), excludes='', stopcontainers=False)
@@ -72,7 +75,7 @@ def initialize(configuration: Path):
     configuration.unlink()
 
 
-def wait_for_monit(timeout=90):
+def wait_for_monit(timeout: float = 90) -> None:
     """The control socket can respond before a reload has registered its services."""
     print('Waiting for Monit to register nginx and php-fpm', flush=True)
     deadline = time.monotonic() + timeout
@@ -90,7 +93,7 @@ def wait_for_monit(timeout=90):
         time.sleep(1)
 
 
-def monit_reload_pending(message):
+def monit_reload_pending(message: str) -> bool:
     """Retry only a single failed monitor state whose service is not registered yet."""
     if not re.search(r'(?m)^Failed:\s+1\s*$', message):
         return False
@@ -105,7 +108,7 @@ def monit_reload_pending(message):
     return False
 
 
-def apply_configuration(*modules):
+def apply_configuration(*modules: str) -> None:
     """Keep rollback history until the full apply succeeds, including reload retries."""
     for attempt in range(3):
         try:
@@ -121,14 +124,13 @@ def apply_configuration(*modules):
             )
             return
         except subprocess.CalledProcessError as error:
-            message = error.stdout or error.stderr or str(error)
+            output = cast(object, error.stdout) or cast(object, error.stderr)
+            message = output if isinstance(output, str) else str(error)
             try:
-                response = json.loads(message)
-                message = response['error']['message']
+                response = decode(message)
+                message = string(mapping(response['error'])['message'])
             except (ValueError, KeyError, TypeError):
                 pass
-            if not isinstance(message, str):
-                message = str(error)
             if attempt == 2 or not monit_reload_pending(message):
                 raise RuntimeError(f'OMV configuration apply failed:\n{message}') from None
             print('WARNING: Monit is still reloading; waiting before retrying the full configuration apply', flush=True)
@@ -143,9 +145,10 @@ def check_pending_changes():
     except FileNotFoundError:
         # Like OMV's getDirtyModules(), a missing file means no pending changes.
         return
-    pending = json.loads(content)
-    if not isinstance(pending, list) or not all(isinstance(module, str) for module in pending):
-        raise RuntimeError('Invalid OMV pending configuration state')
+    try:
+        pending = [string(module) for module in items(cast(object, json.loads(content)))]
+    except (ValueError, TypeError) as error:
+        raise RuntimeError('Invalid OMV pending configuration state') from error
     unrelated = set(pending).difference(INSTALL_MODULES)
     if unrelated:
         raise RuntimeError(f'Apply or revert unrelated OMV changes before installing: {", ".join(sorted(unrelated))}')
@@ -153,13 +156,13 @@ def check_pending_changes():
 
 def branding_config():
     link = Element('link', rel='stylesheet', href='/interactive-vm.css')
-    banner = Element('aside', id='omv-test-banner', role='note', **{'aria-label': 'Testing virtual machine'})
+    banner = Element('aside', {'aria-label': 'Testing virtual machine'}, id='omv-test-banner', role='note')
     SubElement(banner, 'strong').text = 'TEST VM'
     SubElement(banner, 'span').text = 'OMV Proton Drive'
     SubElement(banner, 'span').text = 'Default login: admin / admin'
     # Nginx injects the banner without modifying OMV's packaged HTML or JavaScript.
     replacements = [('</head>', link), ('</body>', banner)]
-    directives = []
+    directives: list[str] = []
     for closing, element in replacements:
         html = tostring(element, encoding='unicode', method='html')
         replacement = json.dumps(f'{html}{closing}')
@@ -167,7 +170,9 @@ def branding_config():
     return '\n'.join([*directives, ''])
 
 
-def brand_web_ui(webroot=Path('/var/www/openmediavault'), snippets=Path('/etc/nginx/openmediavault-webgui.d')):
+def brand_web_ui(
+    webroot: Path = Path('/var/www/openmediavault'), snippets: Path = Path('/etc/nginx/openmediavault-webgui.d')
+) -> None:
     shutil.copyfile(Path(__file__).with_name('interactive-vm.css'), webroot / 'interactive-vm.css')
     snippets.mkdir(parents=True, exist_ok=True)
     (snippets / '90-interactive-vm.conf').write_text(branding_config())
@@ -180,7 +185,7 @@ def main(package: Path, configuration: Path | None = None):
         raise SystemExit('Run using the interactive VM harness')
     check_pending_changes()
     os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
-    run('apt-get', 'install', '-y', '--reinstall', '--no-install-recommends', 'python3-rich', str(package))
+    run('apt-get', 'install', '-y', '--reinstall', '--no-install-recommends', 'python3-rich', 'nftables', str(package))
     setup_traceback()
     run('systemctl', 'restart', 'openmediavault-engined')
     if configuration is not None:

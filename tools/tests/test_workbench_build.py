@@ -3,10 +3,13 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 
 import yaml
-from build_workbench import build, load_document
 from jinja2 import Environment, StrictUndefined, TemplateSyntaxError
+
+from build_workbench import build, load_document
+from tool_data import field, items, mapping, string
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKBENCH = ROOT / 'src/omv/workbench'
@@ -16,26 +19,31 @@ OVERVIEW = Path('component.d/omv-services-protondrive-status-form-page.yaml')
 
 class WorkbenchBuildTests(unittest.TestCase):
     def setUp(self):
-        self.config = load_document(WORKBENCH / OVERVIEW, TEMPLATES)['data']['config']
-        self.cards = {field['name']: field['text'] for field in self.config['fields'] if field['type'] == 'card'}
+        self.config = mapping(field(load_document(WORKBENCH / OVERVIEW, TEMPLATES), 'data', 'config'))
+        self.cards = {
+            string(card['name']): string(card['text'])
+            for raw in items(self.config['fields'])
+            if (card := mapping(raw))['type'] == 'card'
+        }
         self.environment = Environment(undefined=StrictUndefined)
 
     def test_package_contains_native_fields_and_preserves_rpc_and_controls(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             build(WORKBENCH, TEMPLATES, output)
-            source = yaml.safe_load((WORKBENCH / OVERVIEW).read_text())['data']['config']
-            packaged = yaml.safe_load((output / OVERVIEW).read_text())['data']['config']
+            source = mapping(field(cast(object, yaml.safe_load((WORKBENCH / OVERVIEW).read_text())), 'data', 'config'))
+            packaged = mapping(field(cast(object, yaml.safe_load((output / OVERVIEW).read_text())), 'data', 'config'))
         self.assertEqual(packaged['buttons'], source['buttons'])
         self.assertEqual(packaged['request'], source['request'])
         self.assertEqual(packaged['autoReload'], source['autoReload'])
-        for field in packaged['fields']:
-            self.assertNotIn('textFile', field)
-            if field['type'] == 'card':
-                self.assertNotIn('\n', field['text'])
+        for raw in items(packaged['fields']):
+            card = mapping(raw)
+            self.assertNotIn('textFile', card)
+            if card['type'] == 'card':
+                self.assertNotIn('\n', string(card['text']))
         self.assertIn('{{ accountemail | escape }}', self.cards['accountstatus'])
 
-    def account(self, state, **values):
+    def account(self, state: str, **values: str) -> str:
         context = {'authstate': state, 'accountemail': '', 'accountorganization': '', 'authurl': '', 'autherror': ''}
         context.update(values)
         return self.environment.from_string(self.cards['accountstatus']).render(context)
@@ -70,6 +78,49 @@ class WorkbenchBuildTests(unittest.TestCase):
         self.assertIn('uploading', output)
         self.assertIn('No successful backup yet', output)
         self.assertIn('<pre>one\n&lt;two&gt;</pre>', output)
+
+    def test_current_item_is_escaped_and_only_shown_during_relevant_phases(self):
+        template = self.environment.from_string(self.cards['backupstatus'])
+        for running, phase, visible in (
+            (True, 'archiving', True),
+            (True, 'verifying', True),
+            (True, 'uploading', True),
+            (True, 'retention', True),
+            (True, 'preflight', False),
+            (False, 'completed', False),
+        ):
+            with self.subTest(running=running, phase=phase):
+                output = template.render(
+                    authstate='signed-in',
+                    running=running,
+                    phase=phase,
+                    message='<archive>.tar.zst',
+                    lastsuccess='',
+                    error='',
+                    details='',
+                )
+                self.assertEqual('Current item: &lt;archive&gt;.tar.zst' in output, visible)
+                self.assertNotIn('<archive>', output)
+
+    def test_transfer_replaces_stale_item_and_disappears_when_idle(self):
+        template = self.environment.from_string(self.cards['backupstatus'])
+        for running in (True, False):
+            output = template.render(
+                authstate='signed-in',
+                running=running,
+                phase='uploading',
+                message='old-archive',
+                transferphase='Verification download',
+                transferfile='<archive>.tar.zst',
+                transferelapsed=12,
+                lastsuccess='',
+                error='',
+                details='',
+            )
+            self.assertEqual('class="protondrive-transfer-phase">Verification download</span>' in output, running)
+            self.assertEqual('class="protondrive-transfer-elapsed">12</span>s elapsed' in output, running)
+            self.assertNotIn('old-archive', output)
+            self.assertNotIn('<archive>', output)
 
     def test_invalid_references_and_syntax_fail_assembly(self):
         with tempfile.TemporaryDirectory() as directory:

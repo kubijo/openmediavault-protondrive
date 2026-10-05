@@ -65,6 +65,10 @@
         python = qaPython;
         src = self;
       };
+      vmGuestTools = import ./infra/nix/vm-guest-tools.nix {
+        inherit pkgs;
+        src = self;
+      };
       vmApp = mode: {
         type = "app";
         program = pkgs.lib.getExe (
@@ -73,6 +77,7 @@
             python = qaPython;
             src = self;
             package = deb;
+            guestBundle = vmGuestTools;
           }
         );
       };
@@ -92,6 +97,7 @@
       webProbe = import ./infra/nix/web-probe.nix {
         inherit pkgs;
         src = self;
+        vmCommand = (vmApp "command").program;
       };
       project = nix-tools.lib.configure {
         inherit system;
@@ -115,11 +121,17 @@
         format = {
           css = true;
           nunjucks.includes = [ "*.html.njk" ];
-          typescript.includes = [ "*.ts" ];
-          python.includes = [
-            "*.py"
-            "src/bin/omv-protondrive"
-          ];
+          typescript = {
+            includes = [ "*.ts" ];
+            organizeImports = true;
+          };
+          python = {
+            configFile = ./pyproject.toml;
+            includes = [
+              "*.py"
+              "src/bin/omv-protondrive"
+            ];
+          };
           shell.includes = [
             "*.sh"
             "src/bin/omv-protondrive-auth"
@@ -168,10 +180,13 @@
             "-ignore"
             ''^label "ubuntu-26\.04" is unknown\.''
           ];
-          python.includes = [
-            "*.py"
-            "omv-protondrive"
-          ];
+          python = {
+            configFile = ./pyproject.toml;
+            includes = [
+              "*.py"
+              "omv-protondrive"
+            ];
+          };
           shell.includes = shellFiles;
           php.extraOptions = [ "--semantics" ];
           debian = true;
@@ -210,6 +225,21 @@
             exclude = [ "LICENSE" ];
           };
           extraProjectCheckers = {
+            python-types = {
+              command = pkgs.lib.getExe pkgs.basedpyright;
+              options = [
+                "--pythonpath"
+                "${qaPython}/bin/python"
+                "src"
+                "src/bin/omv-protondrive"
+                "tools"
+                "tests"
+              ];
+              outdated = {
+                package = pkgs.basedpyright;
+                repo = "detachhead/basedpyright";
+              };
+            };
             vm-branding = {
               command = pkgs.lib.getExe qa.checkBranding;
               outdated.skip = "Versioned with this repository";
@@ -283,6 +313,7 @@
       checks.${system} = project.checks // {
         tests = qa.hermeticTests;
         web-probe-types = webProbe.checked;
+        vm-guest-tools = vmGuestTools;
       };
       apps.${system} = project.apps // {
         audit = {
@@ -315,6 +346,7 @@
         };
         test-vm = vmApp "test";
         vm = vmApp "control";
+        vm-command = vmApp "command";
         vm-up = vmApp "up";
         vm-install = vmApp "install";
         web-probe = {

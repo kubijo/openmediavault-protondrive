@@ -1,8 +1,6 @@
 import unittest
-from unittest.mock import patch
 
 from helpers import configuration
-
 from protondrive.common import BackupError, locked
 from protondrive.config import validate
 
@@ -11,6 +9,23 @@ class ConfigTests(unittest.TestCase):
     def test_defaults(self):
         config, _ = configuration()
         self.assertEqual(validate(config)['schedulehour'], 3)
+        self.assertEqual(config['remotepath'], '/my-files/open-media-vault-proton-backup')
+
+    def test_remote_destination_is_one_user_chosen_root_folder(self):
+        config, _ = configuration()
+        config['remotepath'] = '/my-files/my own backups'
+        self.assertEqual(validate(config)['remotepath'], config['remotepath'])
+        for path in (
+            '/my-files',
+            '/my-files/other/nested',
+            '/my-files/../other',
+            '/my-files/.',
+            '/my-files/-unsafe',
+            '/trash/other',
+        ):
+            config['remotepath'] = path
+            with self.subTest(path=path), self.assertRaises(BackupError):
+                validate(config)
 
     def test_overlap_and_traversal(self):
         for source in ('/', '/data', '/data/.omv-protondrive/x', '/etc/../data'):
@@ -46,7 +61,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_no_mutation_of_source(self):
         config, item = configuration()
-        item['enable'] = '1'
-        with patch('pathlib.Path.resolve', autospec=True, side_effect=lambda p: p):
-            self.assertIs(validate(config)['sets'][0]['enable'], True)
-        self.assertEqual(item['enable'], '1')
+        raw_item: dict[str, object] = {**item, 'enable': '1'}
+        raw_config: dict[str, object] = {**config, 'sets': [raw_item]}
+        self.assertIs(validate(raw_config)['sets'][0]['enable'], True)
+        self.assertEqual(raw_item['enable'], '1')

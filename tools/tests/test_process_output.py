@@ -10,8 +10,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from process_output import ProcessOutput, Transcript
 from rich.console import Console
+
+from process_output import ProcessOutput, Transcript
 
 FIXTURE = Path(__file__).parent / 'fixtures/process_output.py'
 
@@ -31,15 +32,15 @@ class ProcessOutputTests(unittest.TestCase):
         self.output = ProcessOutput(in_clanker=True)
         self.output.console = Console(file=self.buffer, color_system=None, width=120)
 
-    def command(self, mode, *args):
+    def command(self, mode: str, *args: str | Path) -> list[str]:
         return [sys.executable, '-u', str(FIXTURE), mode, *map(str, args)]
 
     def test_streams_before_exit_preserving_stderr_unicode_and_partial_lines(self):
         marker = self.root / 'output-seen'
         original = self.output.console.print
 
-        def capture(text, **kwargs):
-            original(text, **kwargs)
+        def capture(text: object, *, end: str = '\n', soft_wrap: bool = False) -> None:
+            original(text, end=end, soft_wrap=soft_wrap)
             if '[red]literal' in str(text):
                 marker.touch()
 
@@ -119,7 +120,7 @@ class ProcessOutputTests(unittest.TestCase):
         pid_file = self.root / 'pid'
         original = Transcript.feed
 
-        def interrupt(transcript, text):
+        def interrupt(transcript: Transcript, text: str) -> None:
             original(transcript, text)
             if 'ready' in text:
                 raise KeyboardInterrupt

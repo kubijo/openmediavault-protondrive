@@ -14,15 +14,19 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Unpack, cast
 from unittest.mock import Mock, patch
+
+from rich.console import Console
+from tests.integration import interactive_guest as guest_module
 
 import interactive_vm
 import vm_control
 import vm_runtime
 from process_output import ProcessOutput
-from rich.console import Console
-from test_vm_cache import load_guest_module
+from tool_data import decode, decode_value, items, string
 from vm_control import VMState
+from vm_runtime import RunOptions
 
 MONIT_RELOAD_ERROR = """Failed to execute omv-salt deploy run nginx:
 ----------
@@ -37,7 +41,27 @@ Failed:     1
 """
 
 
-def failed_apply(message):
+class GuestMock:
+    def __init__(self, ssh: list[str] | None = None) -> None:
+        self.run = Mock()
+        self.copy = Mock()
+        self.python = Mock()
+        self.ensure_idle = Mock()
+        self.ssh = ssh or []
+
+
+class OutputMock(ProcessOutput):
+    def __init__(self, animate: bool = False) -> None:
+        super().__init__(in_clanker=True)
+        self.run = Mock()
+        self.run_mock = Mock()
+        self.stage_mock = Mock()
+        self.run = self.run_mock
+        self.stage = self.stage_mock
+        self.animate = animate
+
+
+def failed_apply(message: str) -> subprocess.CalledProcessError:
     return subprocess.CalledProcessError(
         1, ['omv-rpc'], output=json.dumps({'response': None, 'error': {'message': message}})
     )
@@ -51,7 +75,8 @@ class InteractiveVMTests(unittest.TestCase):
         self.state = VMState(self.root / 'state')
         self.options = interactive_vm.Options('up', state_dir=self.state.root)
         self.output = ProcessOutput(in_clanker=True)
-        self.output.console = Console(file=io.StringIO(), color_system=None)
+        self.buffer = io.StringIO()
+        self.output.console = Console(file=self.buffer, color_system=None)
 
     def seed_state(self):
         self.state.instance.mkdir(parents=True)
@@ -75,10 +100,14 @@ class InteractiveVMTests(unittest.TestCase):
         self.options.package = package
         runtime_run = vm_runtime.run
 
-        def run(*args, **kwargs):
+        def run(*args: str, text: bool = False, input: str | bytes | None = None, **kwargs: Unpack[RunOptions]):
             if args[0] == 'dpkg-deb':
                 return Mock(stdout='python3')
-            return runtime_run(*args, **kwargs)
+            if text:
+                assert input is None or isinstance(input, str)
+                return runtime_run(*args, text=True, input=input, **kwargs)
+            assert input is None or isinstance(input, bytes)
+            return runtime_run(*args, input=input, **kwargs)
 
         with (
             self.state.lock(),
@@ -93,13 +122,14 @@ class InteractiveVMTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(json.loads(result.stdout)['full-backing-filename'], str(self.state.instance / 'base.qcow2'))
+        self.assertEqual(decode(result.stdout)['full-backing-filename'], str(self.state.instance / 'base.qcow2'))
         subprocess.run(['qemu-img', 'check', str(self.state.instance / 'disk.qcow2')], check=True, capture_output=True)
         self.assertEqual(self.state.root.stat().st_mode & 0o777, 0o700)
         self.assertEqual((self.state.instance / 'admin-password').stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.state.instance / 'admin-password').read_text(), 'admin\n')
-        configuration = json.loads((self.state.instance / 'interactive-init.json').read_text())
+        configuration = decode((self.state.instance / 'interactive-init.json').read_text())
         self.assertEqual(configuration['admin_password'], 'admin')
+        self.assertEqual(configuration['remote_folder'], '/my-files/open-media-vault-proton-backup-development')
         self.assertFalse(self.state.read()['initialized'])
         self.assertTrue((self.state.instance / 'key').exists())
 
@@ -160,7 +190,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.assertEqual((self.state.instance / 'disk.qcow2').read_bytes(), b'persistent login state')
 
     def test_interactive_stop_uses_systemd_instead_of_ignored_power_button(self):
-        guest = Mock()
+        guest: GuestMock = GuestMock()
         with (
             patch.object(self.state, 'running', side_effect=[{'status': 'running'}, None]),
             patch.object(interactive_vm, 'connection', return_value=guest),
@@ -192,15 +222,20 @@ class InteractiveVMTests(unittest.TestCase):
         package.touch()
         self.options.package = package
         (self.state.root / 'logs').mkdir()
-        guest = Mock()
+        guest: GuestMock = GuestMock()
+        guest.run.return_value = Mock(stdout='{"instanceuuid":"example-instance"}')
         with (
             patch.object(self.state, 'running', return_value={'status': 'running'}),
             patch.object(interactive_vm, 'connection', return_value=guest),
-            patch.object(interactive_vm, 'setup_shell'),
+            patch.object(interactive_vm, 'setup_shell') as setup_shell,
         ):
             interactive_vm.install(self.options, self.state, self.output)
+        setup_shell.assert_called_once_with(self.options, self.state)
         self.assertEqual(guest.copy.call_count, 1)
-        self.assertNotIn('/root/interactive-init.json', guest.python.call_args.args)
+        assert guest.python.call_args is not None
+        self.assertNotIn('/root/interactive-init.json', cast(tuple[object, ...], guest.python.call_args.args))
+        self.assertEqual(guest.python.call_args.args[1], f'{interactive_vm.GUEST_TOOLS}/interactive_guest.py')
+        self.assertEqual(self.state.read()['proton_instance_uuid'], 'example-instance')
         self.assertEqual((self.state.instance / 'disk.qcow2').read_bytes(), b'persistent login state')
 
     def test_ports_are_only_forwarded_on_localhost(self):
@@ -246,13 +281,14 @@ class InteractiveVMTests(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, 'SSH unavailable'),
         ):
             interactive_vm.up(self.options, self.state, self.output)
-        self.assertIn('-daemonize', run.call_args.args[0])
+        assert run.call_args is not None
+        self.assertIn('-daemonize', items(cast(object, run.call_args.args[0])))
         self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
         stop.assert_not_called()
 
     def test_ssh_exit_status_is_preserved_without_stopping_vm(self):
         self.seed_state()
-        guest = Mock(ssh=['ssh', 'root@localhost'])
+        guest: GuestMock = GuestMock(ssh=['ssh', 'root@localhost'])
         with (
             patch.object(self.state, 'running', return_value={'status': 'running'}),
             patch.object(interactive_vm, 'setup_shell'),
@@ -278,24 +314,74 @@ class InteractiveVMTests(unittest.TestCase):
 
     def test_guest_shell_installs_tools_without_reinstalling_plugin(self):
         self.seed_state()
-        binary = self.root / 'just'
-        binary.touch()
-        self.options.guest_just = binary
-        guest = Mock()
+        bundle = self.root / 'omv-protondrive-vm-tools.tar'
+        bundle.touch()
+        self.options.guest_bundle = bundle
+        guest: GuestMock = GuestMock()
+        directory = f'{interactive_vm.GUEST_TOOLS}.{bundle.parent.name}.test'
+
+        def run(*args: str, text: bool = False, input: str | bytes | None = None, **kwargs: Unpack[RunOptions]):
+            return Mock(returncode=0, stdout=directory + '\n' if args[0] == 'mktemp' else '')
+
+        guest.run.side_effect = run
         with patch.object(interactive_vm, 'connection', return_value=guest):
             interactive_vm.setup_shell(self.options, self.state)
         self.assertEqual(guest.run.call_args_list[0].args, ('test', '-f', '/var/lib/protondrive-interactive-vm'))
-        guest.run.assert_any_call('install', '-m', '0755', '/root/just', '/usr/local/bin/just')
-        guest.run.assert_any_call('install', '-m', '0644', '/root/guest.just', '/root/justfile')
+        guest.copy.assert_called_once_with(bundle)
+        guest.run.assert_any_call('tar', '-xf', f'/root/{bundle.name}', '-C', directory, '--strip-components=1')
+        guest.run.assert_any_call('chmod', '0755', directory)
+        guest.run.assert_any_call('ln', '-sfn', directory, f'{interactive_vm.GUEST_TOOLS}.next')
+        guest.run.assert_any_call('mv', '-Tf', f'{interactive_vm.GUEST_TOOLS}.next', interactive_vm.GUEST_TOOLS)
+        guest.run.assert_any_call('ln', '-sfn', f'{interactive_vm.GUEST_TOOLS}/just', '/usr/local/bin/just')
+        guest.run.assert_any_call('ln', '-sfn', f'{interactive_vm.GUEST_TOOLS}/guest.just', '/root/justfile')
+        guest.run.assert_any_call(
+            'tee',
+            f'{interactive_vm.GUEST_TOOLS}/.bundle-id',
+            input=bundle.parent.name + '\n',
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(guest.run.call_args.args, ('tee', f'{interactive_vm.GUEST_TOOLS}/.bundle-id'))
         guest.python.assert_not_called()
+
+    def test_guest_shell_moves_legacy_directory_before_activation(self):
+        self.seed_state()
+        bundle = self.root / 'omv-protondrive-vm-tools.tar'
+        bundle.touch()
+        self.options.guest_bundle = bundle
+        guest: GuestMock = GuestMock()
+
+        def run(*args: str, text: bool = False, input: str | bytes | None = None, **kwargs: Unpack[RunOptions]):
+            if args[0] == 'mktemp':
+                return Mock(returncode=0, stdout=f'{interactive_vm.GUEST_TOOLS}.new\n')
+            if args == ('test', '-L', interactive_vm.GUEST_TOOLS):
+                return Mock(returncode=1, stdout='')
+            return Mock(returncode=0, stdout='')
+
+        guest.run.side_effect = run
+        with patch.object(interactive_vm, 'connection', return_value=guest):
+            interactive_vm.setup_shell(self.options, self.state)
+        guest.run.assert_any_call('mv', '-T', interactive_vm.GUEST_TOOLS, f'{interactive_vm.GUEST_TOOLS}.legacy')
+
+    def test_guest_shell_reuses_matching_built_bundle(self):
+        self.seed_state()
+        bundle = self.root / 'omv-protondrive-vm-tools.tar'
+        bundle.touch()
+        self.options.guest_bundle = bundle
+        guest: GuestMock = GuestMock()
+        guest.run.side_effect = [Mock(returncode=0), Mock(returncode=0, stdout=bundle.parent.name + '\n')]
+        with patch.object(interactive_vm, 'connection', return_value=guest):
+            interactive_vm.setup_shell(self.options, self.state)
+        guest.copy.assert_not_called()
+        self.assertEqual(guest.run.call_count, 2)
 
     def test_describe_does_not_expose_saved_credentials(self):
         self.seed_state()
         interactive_vm.describe(self.state, self.output, 'STOPPED')
-        self.assertNotIn('fixture-password', self.output.console.file.getvalue())
+        self.assertNotIn('fixture-password', self.buffer.getvalue())
 
     def test_interactive_guest_refuses_host_and_upgrade_preserves_settings(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         with (
             patch.object(guest.Path, 'exists', return_value=False),
             self.assertRaisesRegex(SystemExit, 'interactive VM'),
@@ -316,7 +402,7 @@ class InteractiveVMTests(unittest.TestCase):
         wait.assert_called_once()
 
     def test_monit_readiness_retries_then_succeeds_and_timeout_fails(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         failed = Mock(returncode=1, stdout='', stderr='socket unavailable')
         with (
             patch.object(guest.subprocess, 'run', side_effect=[failed, Mock(returncode=0), Mock(returncode=0)]) as run,
@@ -340,11 +426,15 @@ class InteractiveVMTests(unittest.TestCase):
             guest.wait_for_monit(timeout=0)
 
     def test_web_deployment_waits_for_monit_and_does_not_ignore_failure(self):
-        guest = load_guest_module('interactive_guest')
-        steps = []
+        guest = guest_module
+        steps: list[tuple[str, ...]] = []
+
+        def record_step(*args: str, **kwargs: object) -> None:
+            steps.append(args)
+
         with (
             patch.object(guest.Path, 'exists', return_value=True),
-            patch.object(guest, 'run', side_effect=lambda *args, **kwargs: steps.append(args)),
+            patch.object(guest, 'run', side_effect=record_step),
             patch.object(guest, 'wait_for_monit', side_effect=lambda: steps.append(('ready',))),
             patch.object(guest, 'brand_web_ui'),
             patch.object(guest, 'check_pending_changes'),
@@ -355,7 +445,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.assertEqual(steps[readiness - 1], ('omv-salt', 'deploy', 'run', 'monit'))
         apply = steps[readiness + 1]
         self.assertEqual(apply[:-1], ('omv-rpc', '-u', 'admin', 'Config', 'applyChanges'))
-        self.assertEqual(json.loads(apply[-1]), {'modules': list(guest.INSTALL_MODULES), 'force': True})
+        self.assertEqual(decode(apply[-1]), {'modules': list(guest.INSTALL_MODULES), 'force': True})
         self.assertEqual(sum('applyChanges' in step for step in steps), 1)
         with (
             patch.object(guest.Path, 'exists', return_value=True),
@@ -369,7 +459,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.assertEqual(run.call_args.args, ('omv-salt', 'deploy', 'run', 'monit'))
 
     def test_apply_retries_only_after_monit_readiness_and_pending_change_check(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         for service, state in (('nginx', 'monitor_nginx_service'), ('php-fpm', 'monitor_phpfpm_service')):
             message = MONIT_RELOAD_ERROR.replace('monitor_nginx_service', state).replace('"nginx"', f'"{service}"')
             for failure in (
@@ -392,7 +482,7 @@ class InteractiveVMTests(unittest.TestCase):
                 check.assert_called_once()
 
     def test_apply_does_not_retry_unrelated_or_multiple_failures(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         for message in (
             'nginx configuration is invalid',
             MONIT_RELOAD_ERROR.replace('monitor_nginx_service', 'test_nginx_service_config'),
@@ -409,7 +499,7 @@ class InteractiveVMTests(unittest.TestCase):
             wait.assert_not_called()
 
     def test_apply_retry_limit_and_new_pending_changes_still_fail(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         for pending_error, attempts in ((None, 3), (RuntimeError('unrelated pending change'), 1)):
             with (
                 self.subTest(pending_error=pending_error),
@@ -422,7 +512,7 @@ class InteractiveVMTests(unittest.TestCase):
             self.assertEqual(run.call_count, attempts)
 
     def test_failed_configuration_apply_stops_installation(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         failure = subprocess.CalledProcessError(1, ['omv-rpc', 'Config', 'applyChanges'])
         with (
             patch.object(guest.Path, 'exists', return_value=True),
@@ -439,7 +529,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.assertFalse(any(call.args[0] == 'omv-mkworkbench' for call in run.call_args_list))
 
     def test_install_without_dirty_modules_file_reaches_configuration_apply(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         pending = self.root / 'dirtymodules.json'
         with (
             patch.object(guest, 'DIRTY_MODULES', pending),
@@ -455,7 +545,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.assertFalse(pending.exists())
 
     def test_pending_state_accepts_empty_list_but_rejects_malformed_content(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         pending = self.root / 'dirtymodules.json'
         with patch.object(guest, 'DIRTY_MODULES', pending):
             pending.write_text('[]')
@@ -467,7 +557,7 @@ class InteractiveVMTests(unittest.TestCase):
                         guest.check_pending_changes()
 
     def test_unreadable_pending_state_is_not_treated_as_clean(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         with (
             patch.object(guest.Path, 'read_text', side_effect=PermissionError),
             self.assertRaises(PermissionError),
@@ -475,7 +565,7 @@ class InteractiveVMTests(unittest.TestCase):
             guest.check_pending_changes()
 
     def test_unrelated_pending_changes_block_install_before_mutation(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         pending = self.root / 'dirtymodules.json'
         pending.write_text('["samba", "protondrive"]')
         with (
@@ -486,13 +576,13 @@ class InteractiveVMTests(unittest.TestCase):
         ):
             guest.main(Path('/tmp/plugin.deb'))
         run.assert_not_called()
-        self.assertEqual(json.loads(pending.read_text()), ['samba', 'protondrive'])
+        self.assertEqual(decode_value(pending.read_text()), ['samba', 'protondrive'])
         pending.write_text('["protondrive"]')
         with patch.object(guest, 'DIRTY_MODULES', pending):
             guest.check_pending_changes()
 
     def test_pending_changes_are_rechecked_before_final_apply(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         with (
             patch.object(guest.Path, 'exists', return_value=True),
             patch.object(guest, 'run'),
@@ -509,7 +599,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.seed_state()
         self.options.package = self.root / 'plugin.deb'
         self.options.package.touch()
-        guest = Mock()
+        guest: GuestMock = GuestMock()
         guest.ensure_idle.side_effect = RuntimeError('remote job still running')
         with (
             patch.object(self.state, 'running', return_value={'status': 'running'}),
@@ -520,7 +610,7 @@ class InteractiveVMTests(unittest.TestCase):
         guest.copy.assert_not_called()
 
     def test_branding_is_idempotent_and_preserves_packaged_html(self):
-        guest = load_guest_module('interactive_guest')
+        guest = guest_module
         webroot = self.root / 'html'
         snippets = self.root / 'snippets'
         webroot.mkdir()
@@ -534,7 +624,7 @@ class InteractiveVMTests(unittest.TestCase):
         self.assertEqual((snippets / '90-interactive-vm.conf').read_text(), first)
         self.assertEqual(
             (webroot / 'interactive-vm.css').read_text(),
-            Path(guest.__file__).with_name('interactive-vm.css').read_text(),
+            Path(string(guest.__file__)).with_name('interactive-vm.css').read_text(),
         )
         source = Path(__file__).resolve().parents[2]
         shutil.copyfile(source / 'src/nginx/90-protondrive.conf', snippets / '90-protondrive.conf')
@@ -551,9 +641,10 @@ class InteractiveVMTests(unittest.TestCase):
     def test_remote_pty_has_closed_input_and_plain_mode_does_not_request_pty(self):
         guest = vm_runtime.guest_connection(self.root, self.root / 'key', 2222)
         fixture = Path(__file__).parent / 'fixtures/process_output.py'
-        output = Mock(animate=True)
+        output: OutputMock = OutputMock(animate=True)
         guest.python(output, str(fixture), self.root / 'log', 10, 'remote-environment')
-        command = output.run.call_args.args[0]
+        assert output.run_mock.call_args is not None
+        command = [string(part) for part in items(cast(object, output.run_mock.call_args.args[0]))]
         self.assertEqual(command[1], '-tt')
         self.assertIn('--property=KillMode=control-group', command[-1])
         # Exercise the payload's terminal and stdin locally; supervision is tested separately.
@@ -577,15 +668,20 @@ class InteractiveVMTests(unittest.TestCase):
             os.close(slave)
         output.animate = False
         guest.python(output, str(fixture), self.root / 'log', 10)
-        command = output.run.call_args.args[0]
+        assert output.run_mock.call_args is not None
+        command = [string(part) for part in items(cast(object, output.run_mock.call_args.args[0]))]
         self.assertEqual(command[1], '-T')
         self.assertIn('TERM=dumb', command[-1])
 
     def test_interactive_connection_does_not_enable_disposable_test_scripts(self):
-        guest = Mock()
+        guest: GuestMock = GuestMock()
         guest.ssh = ['ssh', 'fixture-guest']
-        output = Mock()
-        output.stage.side_effect = lambda title: contextlib.nullcontext()
+        output: OutputMock = OutputMock()
+
+        def stage_context(title: str):
+            return contextlib.nullcontext()
+
+        output.stage_mock.side_effect = stage_context
         runtime = vm_runtime.Options(image=self.root, package=self.root, reports=self.root)
         with (
             patch.object(vm_runtime, 'guest_connection', return_value=guest),
@@ -608,7 +704,7 @@ class MonitorTests(unittest.TestCase):
                     connection.settimeout(5)
                     stream.write(json.dumps({'QMP': {'version': {}, 'capabilities': []}}).encode() + b'\r\n')
                     for name in ('qmp_capabilities', 'query-status'):
-                        request = json.loads(stream.readline())
+                        request = decode(stream.readline())
                         self.assertEqual(request['execute'], name)
                         stream.write(json.dumps({'event': 'RESUME'}).encode() + b'\r\n')
                         response = {'return': {'status': 'running'}, 'id': request['id']}

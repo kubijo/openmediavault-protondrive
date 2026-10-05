@@ -7,21 +7,44 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+from rich.console import Console
 
 import audit
 import console
 import outdated
 import qa_report
+from cli_options import parse_options
 from qa_report import Result
-from rich.console import Console
+from tool_data import decode, field, items, mapping
+
+
+@dataclass
+class CLIOptions:
+    count: int = 1
+
+
+class CLIOptionsTests(unittest.TestCase):
+    def test_parses_real_tyro_options(self) -> None:
+        with patch.object(sys, 'argv', ['fixture', '--count', '3']):
+            self.assertEqual(parse_options(CLIOptions), CLIOptions(count=3))
+
+    def test_wrong_parser_result_is_rejected_at_boundary(self) -> None:
+        def malformed(schema: type[CLIOptions]) -> object:
+            return {'count': 3}
+
+        with self.assertRaises(TypeError):
+            parse_options(CLIOptions, malformed)
 
 
 class TerminalTests(unittest.TestCase):
     def test_crash_handler_preserves_failure_and_hides_locals_in_all_output_modes(self):
         secret = secrets.token_hex(24)
-        cases = (
+        cases: tuple[tuple[dict[str, str], dict[str, bool], bool], ...] = (
             ({'FORCE_COLOR': '1'}, {}, False),
             ({'FORCE_COLOR': '1', 'NO_COLOR': ''}, {}, True),
             ({'FORCE_COLOR': '1', 'TERM': 'dumb'}, {}, True),
@@ -97,9 +120,9 @@ class TerminalTests(unittest.TestCase):
         diagnostic = '\n'.join(map(str, range(50)))
         with contextlib.redirect_stdout(output):
             qa_report.report([Result('tool', 'failed', detail=diagnostic)], json_output=True, in_clanker=True)
-        data = json.loads(output.getvalue())
+        data = decode(output.getvalue())
         self.assertEqual(data['state'], 'FAILED')
-        self.assertEqual(data['components'][0]['detail'], diagnostic)
+        self.assertEqual(field(items(data['components'])[0], 'detail'), diagnostic)
 
     def test_rich_output_respects_color_controls_and_literal_markup(self):
         for environment, colored in (
@@ -177,8 +200,7 @@ class TerminalTests(unittest.TestCase):
             ({'FORCE_COLOR': '0'}, True, False),
         ):
             with self.subTest(environment=environment, tty=tty), patch.dict(os.environ, environment, clear=True):
-                terminal = Mock(is_terminal=True)
-                terminal.file.isatty.return_value = tty
+                terminal = Mock(is_terminal=True, file=Mock(isatty=Mock(return_value=tty)))
                 self.assertEqual(console.live_output(terminal), allowed)
                 self.assertFalse(console.live_output(terminal, in_clanker=True))
                 self.assertFalse(console.live_output(terminal, no_color=True))
@@ -201,10 +223,12 @@ class LookupTests(unittest.TestCase):
                 contextlib.redirect_stdout(output),
             ):
                 self.assertEqual(outdated.main(outdated.Options(Path('.'))), 0)
-            report = json.loads(output.getvalue())
+            report = decode(output.getvalue())
             self.assertEqual(report['schemaVersion'], 1)
-            self.assertEqual(report['results'][0]['state'], state)
-            self.assertEqual(set(report['results'][0]), {'name', 'state', 'current', 'latest', 'detail'})
+            self.assertEqual(field(items(report['results'])[0], 'state'), state)
+            self.assertEqual(
+                set(mapping(items(report['results'])[0])), {'name', 'state', 'current', 'latest', 'detail'}
+            )
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(outdated.main(outdated.Options(Path(directory))), 0)
         self.assertEqual(json.loads(output.getvalue())['results'][0]['state'], 'error')
@@ -212,7 +236,7 @@ class LookupTests(unittest.TestCase):
     def test_application_retains_successful_sources_when_one_lookup_fails(self):
         root = Path(__file__).resolve().parents[2]
 
-        def lookup(name, source):
+        def lookup(name: str, source: Mapping[str, object]) -> Result:
             if name == 'proton-cli':
                 raise ValueError('private diagnostic')
             return Result(name, 'up-to-date', '1', '1')
@@ -241,7 +265,7 @@ class LookupTests(unittest.TestCase):
         page = '<a href="https://example.test/cli/2.0.0/linux-arm64/proton-drive">download</a>'
         with patch.object(outdated, 'fetch', return_value=page) as fetch:
             self.assertEqual(outdated.external_source('cli', source).latest, '2.0.0')
-            fetch.assert_called_once_with(source['updates']['url'])
+            fetch.assert_called_once_with('https://example.test/releases')
         with patch.object(outdated, 'fetch', return_value='<html>changed layout</html>'):
             result = outdated.guarded('cli', lambda: outdated.external_source('cli', source))
             self.assertEqual(result.state, 'error')
@@ -276,7 +300,9 @@ class AuditTests(unittest.TestCase):
     def test_all_audit_steps_run_even_after_a_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             plan = Path(directory) / 'plan.json'
-            plan.write_text(json.dumps([{'name': 'one'}, {'name': 'two'}]))
+            plan.write_text(
+                json.dumps([{'name': name, 'command': ['true'], 'findingCodes': [1]} for name in ('one', 'two')])
+            )
             with (
                 patch.object(audit, 'run_step', side_effect=[Result('one', 'failed'), Result('two', 'passed')]) as run,
                 contextlib.redirect_stdout(io.StringIO()) as output,
@@ -289,7 +315,7 @@ class AuditTests(unittest.TestCase):
     def test_gitleaks_rejects_and_redacts_a_seeded_secret(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            step = {
+            step: audit.AuditStep = {
                 'name': 'secrets',
                 'findingCodes': [10],
                 'command': [
@@ -312,7 +338,7 @@ class AuditTests(unittest.TestCase):
 
     def test_only_an_unborn_repository_can_skip_history(self):
         with tempfile.TemporaryDirectory() as directory:
-            step = {'name': 'history', 'requiresHead': True, 'command': [], 'findingCodes': [10]}
+            step: audit.AuditStep = {'name': 'history', 'requiresHead': True, 'command': [], 'findingCodes': [10]}
             root = Path(directory)
             self.assertEqual(audit.run_step(step, root).state, 'error')
             subprocess.run(['git', 'init', '--quiet', directory], check=True)

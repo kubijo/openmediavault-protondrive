@@ -31,11 +31,15 @@ def apply():
     guest.apply_configuration(*guest.INSTALL_MODULES)
 
 
+class Arguments(argparse.Namespace):
+    command: str
+
+
 def main():
     commands = {'pending': pending, 'apply': apply, 'recipes': recipes, 'banner': banner}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=commands)
-    options = parser.parse_args()
+    options = parser.parse_args(namespace=Arguments())
     if not Path('/var/lib/protondrive-interactive-vm').is_file():
         raise SystemExit('Run inside the interactive test VM')
     guest.setup_traceback()

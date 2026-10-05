@@ -3,6 +3,7 @@
   python,
   src,
   package,
+  guestBundle,
   mode ? "test",
 }:
 let
@@ -11,18 +12,24 @@ let
   image = pkgs.fetchurl {
     inherit (source) url sha512;
   };
-  script = if mode == "test" then "tests/integration/vm.py" else "tools/interactive_vm.py";
+  script =
+    if mode == "test" then
+      "tests/integration/vm.py"
+    else if mode == "command" then
+      "tools/vm_command.py"
+    else
+      "tools/interactive_vm.py";
   arguments =
-    pkgs.lib.optional (mode != "test" && mode != "control") mode
-    ++ pkgs.lib.optionals (mode != "control") [
+    pkgs.lib.optional (mode == "up" || mode == "install") mode
+    ++ pkgs.lib.optionals (mode == "test" || mode == "up" || mode == "install") [
       "--image"
       "${image}"
       "--package"
       "${package}/openmediavault-protondrive_7.0.0_amd64.deb"
     ]
-    ++ pkgs.lib.optionals (mode != "test") [
-      "--guest-just"
-      "${pkgs.pkgsStatic.just}/bin/just"
+    ++ pkgs.lib.optionals (mode == "control" || mode == "up" || mode == "install") [
+      "--guest-bundle"
+      "${guestBundle}/omv-protondrive-vm-tools.tar"
     ];
 in
 pkgs.writeShellApplication {

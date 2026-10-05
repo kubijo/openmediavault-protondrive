@@ -1,7 +1,7 @@
 """Failure reporting and cleanup order for the unattended VM flow."""
 
-import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,27 +9,20 @@ import unittest
 from pathlib import Path
 
 import vm_flow
+from tool_data import decode, items, mapping, string
 
 
 class VMFlowTests(unittest.TestCase):
-    def run_flow(self, *, same_reset=False, fail_backup=False):
+    def run_flow(
+        self, *, same_reset: bool = False, fail_backup: bool = False
+    ) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'justfile').touch()
             binary = root / 'bin'
             binary.mkdir()
             just = binary / 'just'
-            just.write_text(
-                f'#!{sys.executable}\n'
-                'import json, os, sys\n'
-                'args = sys.argv[1:]\n'
-                'if args[0] == "vm::probe":\n'
-                '    name = args[args.index("--output") + 1].split("/")[-1]\n'
-                '    remote = "initial" if name != "reset-web" or os.getenv("SAME_RESET") else "new"\n'
-                '    print(json.dumps({"ok": True, "remote_folder": remote, "screenshots": []}))\n'
-                'elif args[0] == "test::vm" and os.getenv("FAIL_BACKUP"):\n'
-                '    sys.exit(1)\n'
-            )
+            shutil.copyfile(Path(__file__).parent / 'fixtures/fake_just_vm_flow.py', just)
             just.chmod(0o755)
             environment = os.environ.copy()
             environment['PATH'] = f'{binary}:{environment["PATH"]}'
@@ -43,22 +36,24 @@ class VMFlowTests(unittest.TestCase):
                 text=True,
                 check=False,
             )
-            [report_path] = (root / '.tmp/autonomous-flow').glob('*/report.json')
-            return process, json.loads(report_path.read_text())
+            reports = list((root / '.tmp/autonomous-flow').glob('*/report.json'))
+            self.assertEqual(len(reports), 1, (process.returncode, process.stdout, process.stderr))
+            [report_path] = reports
+            return process, decode(report_path.read_text())
 
     def test_reset_requires_a_new_web_identity(self):
         process, report = self.run_flow(same_reset=True)
         self.assertEqual(process.returncode, 1)
         self.assertFalse(report['ok'])
-        self.assertIn('retained the previous remote folder', report['error'])
-        self.assertNotIn('backup-restore', [step['name'] for step in report['steps']])
+        self.assertIn('new instance UUID', string(report['error']))
+        self.assertNotIn('backup-restore', [string(mapping(step)['name']) for step in items(report['steps'])])
 
     def test_backup_failure_skips_disk_delete_and_records_error(self):
         process, report = self.run_flow(fail_backup=True)
         self.assertEqual(process.returncode, 1)
         self.assertFalse(report['ok'])
-        self.assertIn('backup-restore failed', report['error'])
-        names = [step['name'] for step in report['steps']]
+        self.assertIn('backup-restore failed', string(report['error']))
+        names = [string(mapping(step)['name']) for step in items(report['steps'])]
         self.assertIn('stop-after-failure', names)
         self.assertNotIn('delete-disposable-disk', names)
 
@@ -66,8 +61,9 @@ class VMFlowTests(unittest.TestCase):
         process, report = self.run_flow()
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertTrue(report['ok'])
-        self.assertNotEqual(report['remote_folders']['initial'], report['remote_folders']['reset'])
-        names = [step['name'] for step in report['steps']]
+        self.assertEqual(mapping(report['remote_folders'])['initial'], mapping(report['remote_folders'])['reset'])
+        self.assertNotEqual(mapping(report['instance_uuids'])['initial'], mapping(report['instance_uuids'])['reset'])
+        names = [string(mapping(step)['name']) for step in items(report['steps'])]
         self.assertLess(names.index('backup-restore'), names.index('delete-disposable-disk'))
 
 

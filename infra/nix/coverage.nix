@@ -27,6 +27,14 @@ in
   checkerKinds.php-syntax = "syntax";
   checkerKinds.css = "semantic";
   projectChecks = {
+    "lint:python-types" = {
+      includes = [
+        "*.py"
+        "src/bin/omv-protondrive"
+      ];
+      kind = "semantic";
+      description = "Pinned ty checks the complete Python source and test tree, including executable fixtures";
+    };
     "lint:vm-branding" = {
       includes = [
         "tools/tests/fixtures/nginx.conf"
@@ -81,7 +89,7 @@ in
       description = "Aggregate gate; file scope comes from the individual lint checkers";
     };
     "validate:Web probe TypeScript" = {
-      includes = [ "tools/web-probe/src/*.ts" ];
+      includes = [ "tools/web-probe/**/*.ts" ];
       kind = "semantic";
       description = "Pinned TypeScript compiler checks the browser probe with strict types";
     };
@@ -139,7 +147,10 @@ in
       reason = "Not supported by debputy lint; package policy is checked by Lintian in the disposable integration suites";
     }
     {
-      includes = [ "tests/fixtures/recovery.service.conf" ];
+      includes = [
+        "tests/fixtures/recovery.service.conf"
+        "tests/integration/ui-cancel.conf"
+      ];
       stages = [ "lint" ];
       reason = "Systemd loads this override in guest recovery tests; no standalone host unit validation";
     }

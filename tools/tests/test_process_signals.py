@@ -13,7 +13,7 @@ from vm_control import VMState
 
 
 class SignalTests(unittest.TestCase):
-    def wait_for(self, path, process):
+    def wait_for(self, path: Path, process: subprocess.Popen[bytes]) -> None:
         deadline = time.monotonic() + 10
         while not path.exists():
             if process.poll() is not None or time.monotonic() > deadline:

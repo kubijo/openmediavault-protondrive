@@ -10,23 +10,25 @@ from pathlib import Path
 
 from .common import BackupError, atomic_json, sync_directory
 from .config import lines
+from .models import BackupSet, Manifest
 
 
-def excluded(path, sources, excludes):
+def excluded(path: Path, sources: list[Path], excludes: list[str]) -> bool:
     return any(path == source / value or source / value in path.parents for source in sources for value in excludes)
 
 
-def estimate(item):
+def estimate(item: BackupSet) -> int:
     sources = [Path(p) for p in lines(item['paths'])]
     excludes = lines(item['excludes'])
-    size, seen = 1024 * 1024, set()
+    size = 1024 * 1024
+    seen: set[tuple[int, int]] = set()
     for source in sources:
         if not source.exists() and not source.is_symlink():
             raise BackupError(f'Source does not exist: {source}')
         candidates = [source]
         if source.is_dir() and not source.is_symlink():
 
-            def onerror(error):
+            def onerror(error: OSError) -> None:
                 raise error
 
             for root, dirs, files in os.walk(source, onerror=onerror, followlinks=False):
@@ -43,12 +45,12 @@ def estimate(item):
     return size + size // 100
 
 
-def check_space(directory, required, reserve):
+def check_space(directory: str | Path, required: int, reserve: int) -> None:
     if shutil.disk_usage(directory).free < required + reserve:
         raise BackupError(f'Insufficient staging space: need {required + reserve} free bytes')
 
 
-def archive(item, partial, reserve):
+def archive(item: BackupSet, partial: Path, reserve: int) -> None:
     """Return only after tar and its compressor have exited; kill both on failure."""
     sources = lines(item['paths'])
     fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -98,15 +100,15 @@ def archive(item, partial, reserve):
         os.fsync(stream.fileno())
 
 
-def digest(path):
+def digest(path: Path) -> str:
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def publish(item, partial, instance, timestamp, gid):
+def publish(item: BackupSet, partial: Path, instance: str, timestamp: str, gid: int) -> Path:
     subprocess.run(['zstd', '--test', '--quiet', str(partial)], check=True)
     final = partial.with_suffix('')
-    metadata = {
+    metadata: Manifest = {
         'format': 1,
         'instanceuuid': instance,
         'setuuid': item['uuid'],

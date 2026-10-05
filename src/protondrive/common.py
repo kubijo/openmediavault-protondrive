@@ -6,7 +6,13 @@ import json
 import os
 import socket
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
+from typing import Literal, overload
+
+from . import records
+from .json_data import JSONValue, decode, object_value
+from .models import Manifest, RemoteEntry, ServiceStatus
 
 STATE = Path('/var/lib/openmediavault-protondrive')
 CONFIG = Path('/etc/openmediavault/protondrive.json')
@@ -19,7 +25,7 @@ class BackupError(Exception):
     """An actionable backup failure safe to present to the administrator."""
 
 
-def atomic_json(path, value, mode=0o600):
+def atomic_json(path: str | Path, value: object, mode: int = 0o600) -> None:
     path = Path(path)
     fd, tmp = tempfile.mkstemp(prefix='.write-', dir=path.parent)
     try:
@@ -36,7 +42,7 @@ def atomic_json(path, value, mode=0o600):
             os.unlink(tmp)
 
 
-def sync_directory(path):
+def sync_directory(path: str | Path) -> None:
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
@@ -45,7 +51,7 @@ def sync_directory(path):
 
 
 @contextlib.contextmanager
-def locked(path):
+def locked(path: str | Path) -> Generator[None, None, None]:
     with open(path, 'a') as stream:
         try:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -54,7 +60,25 @@ def locked(path):
         yield
 
 
-def request(operation, **params):
+@overload
+def request(
+    operation: Literal['status', 'probe', 'start-auth', 'cancel-auth', 'logout'], **params: JSONValue
+) -> ServiceStatus: ...
+
+
+@overload
+def request(operation: Literal['prepare'], **params: JSONValue) -> list[RemoteEntry]: ...
+
+
+@overload
+def request(operation: Literal['upload'], **params: JSONValue) -> Manifest: ...
+
+
+@overload
+def request(operation: str, **params: JSONValue) -> object: ...
+
+
+def request(operation: str, **params: JSONValue) -> object:
     with socket.socket(socket.AF_UNIX) as client:
         client.settimeout(5 if operation == 'cancel-transfer' else 86500)
         client.connect(str(SOCKET))
@@ -63,7 +87,14 @@ def request(operation, **params):
             line = stream.readline(LIMIT + 1)
         if len(line) > LIMIT:
             raise BackupError('Proton service response too large')
-        result = json.loads(line)
+        result = object_value(decode(line))
         if not result.get('ok'):
             raise BackupError(result.get('error', 'Proton service failed'))
-        return result['result']
+        value = result['result']
+        if operation in ('status', 'probe', 'start-auth', 'cancel-auth', 'logout'):
+            return records.service_status(value)
+        if operation == 'prepare':
+            return records.listing(value)
+        if operation == 'upload':
+            return records.manifest(value)
+        return value
