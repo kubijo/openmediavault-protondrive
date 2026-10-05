@@ -94,6 +94,18 @@
         python = qaPython;
         src = self;
       };
+      testDebian = pkgs.writeShellApplication {
+        name = "protondrive-test-debian";
+        runtimeInputs = [
+          qaPython
+          pkgs.docker-client
+        ];
+        text = ''
+          export PYTHONPATH="${self}/tools"
+          exec python ${self}/tests/integration/debian_smoke.py \
+            --package ${deb}/openmediavault-protondrive_7.0.0_amd64.deb "$@"
+        '';
+      };
       webProbe = import ./infra/nix/web-probe.nix {
         inherit pkgs;
         src = self;
@@ -314,6 +326,9 @@
         tests = qa.hermeticTests;
         web-probe-types = webProbe.checked;
         vm-guest-tools = vmGuestTools;
+        debian-test-launcher = pkgs.runCommand "check-debian-test-launcher" { } ''
+          ${pkgs.lib.getExe testDebian} --help > "$out"
+        '';
       };
       apps.${system} = project.apps // {
         audit = {
@@ -330,19 +345,7 @@
         };
         test-debian = {
           type = "app";
-          program = pkgs.lib.getExe (
-            pkgs.writeShellApplication {
-              name = "protondrive-test-debian";
-              runtimeInputs = [
-                qaPython
-                pkgs.docker-client
-              ];
-              text = ''
-                exec python ${self}/tests/integration/debian_smoke.py \
-                  --package ${deb}/openmediavault-protondrive_7.0.0_amd64.deb "$@"
-              '';
-            }
-          );
+          program = pkgs.lib.getExe testDebian;
         };
         test-vm = vmApp "test";
         vm = vmApp "control";

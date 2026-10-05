@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { confirmRecovery, GuestCommandError, guestArguments } from '../src/live.ts';
+import { confirmRecovery, GuestCommandError, guestArguments, interruptedUploadFinished } from '../src/live.ts';
+
+test('interruption polling tolerates stale completion but rejects a new success or recovery failure', () => {
+    const baseline = { phase: 'completed', success: 'previous', item: '' };
+    assert.equal(interruptedUploadFinished(baseline, 'previous'), false);
+    assert.equal(interruptedUploadFinished({ ...baseline, phase: '' }, 'previous'), false);
+    assert.equal(interruptedUploadFinished({ ...baseline, phase: 'uploading' }, 'previous'), false);
+    assert.equal(interruptedUploadFinished({ ...baseline, phase: 'failed' }, 'previous'), true);
+    assert.throws(() => interruptedUploadFinished({ ...baseline, success: 'new' }, 'previous'), /completed instead/);
+    assert.throws(
+        () => interruptedUploadFinished({ ...baseline, phase: 'recovery-failed' }, 'previous'),
+        /Container recovery failed/,
+    );
+});
 
 test('recovery defaults to abort and requires explicit consent in unattended runs', async () => {
     for (const answer of ['', 'abort', 'yes', 'unexpected']) {

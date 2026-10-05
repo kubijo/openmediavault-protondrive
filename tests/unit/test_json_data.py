@@ -1,15 +1,48 @@
 """External data must be validated before it becomes a typed domain record."""
 
+import os
+import socket
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from tests.integration.flow_records import backup_status, flow_record, retry_record
 
 from protondrive import json_data, records
-from protondrive.common import BackupError
+from protondrive.common import BackupError, atomic_json, request
 from protondrive.config import validate
 
 
 class JSONDataTests(unittest.TestCase):
+    def test_request_timeout_bounds_an_unresponsive_service(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, socket.socket(socket.AF_UNIX) as server:
+            path = Path(temporary) / 'service.sock'
+            server.bind(str(path))
+            server.listen(1)
+            with patch('protondrive.common.SOCKET', path), self.assertRaises(TimeoutError):
+                request('status', timeout=0.01)
+
+    def test_atomic_config_has_service_permissions_before_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'config.json'
+            replace = os.replace
+
+            def publish(source: str, destination: Path) -> None:
+                metadata = Path(source).stat()
+                self.assertEqual((metadata.st_uid, metadata.st_gid), (os.getuid(), os.getgid()))
+                self.assertEqual(metadata.st_mode & 0o777, 0o640)
+                replace(source, destination)
+
+            with patch('protondrive.common.os.replace', side_effect=publish) as publish_mock:
+                atomic_json(target, {'checked': True}, 0o640, owner=(os.getuid(), os.getgid()))
+            publish_mock.assert_called_once()
+            self.assertEqual(json_data.decode(target.read_text()), {'checked': True})
+            with patch('protondrive.common.os.fchown', side_effect=PermissionError), self.assertRaises(PermissionError):
+                atomic_json(target, {'checked': False}, 0o640, owner=(os.getuid(), os.getgid()))
+            self.assertEqual(json_data.decode(target.read_text()), {'checked': True})
+            self.assertEqual(list(Path(temporary).iterdir()), [target])
+
     def test_nested_values_preserve_content(self) -> None:
         value = json_data.decode('{"items":[null,true,3,1.5,"λ"]}')
         self.assertEqual(value, {'items': [None, True, 3, 1.5, 'λ']})

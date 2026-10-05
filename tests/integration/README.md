@@ -174,6 +174,10 @@ prevents concurrent live flows. Ctrl+C stops the active test operation, cleans u
 130\. After a forced termination, the next run asks whether to recover the abandoned fixture or abort; automation must
 explicitly pass `--recover`. Recovery failures retain their evidence for inspection.
 
+`just vm::retry` interrupts a real fixture upload with a bounded firewall rule restricted to the VM's Proton service
+user, then checks preservation, UI-triggered retry ordering, and download/restore of the retained archive. The watcher
+and cleanup remove only rules owned by that run; configuration and container fixtures are restored on exit.
+
 ## Remaining authenticated/manual release gates
 
 Run these on a disposable Debian 12 / OMV 7 amd64 VM. Use test containers and a dedicated Proton folder. These are
@@ -191,9 +195,10 @@ manual release gates; local unit tests do not claim to have exercised them.
 05. During container archiving, send SIGTERM and SIGKILL to the runner in separate tests. Confirm all recorded
     containers resume, while previously stopped containers remain stopped. Repeat with a VM reboot and with a failed
     Docker start. The recovery record must remain until the final container is running.
-06. Inject tar failure, low/full staging space, missing source, upload interruption and network failure. Confirm no
-    incomplete archive is published, pending complete archives survive, and a failed backup never removes the last
-    confirmed copy. Resume and verify pending uploads are retried before containers are stopped again.
+06. Run `just vm::retry` for upload interruption and network recovery. Also inject tar failure, low/full staging space,
+    and missing sources. Confirm no incomplete archive is published, pending complete archives survive, and a failed
+    backup never removes the last confirmed copy. Resume and verify pending uploads are retried before containers are
+    stopped again.
 07. Start a scheduled and a manual job simultaneously. Verify only one run proceeds. Close the execution dialog's
     browser tab and confirm the job continues; exercise explicit Cancel backup and verify restoration completes.
 08. Produce more than the configured retention counts. Verify only the oldest completed pairs are moved to trash. Add

@@ -692,6 +692,13 @@ class InteractiveVMTests(unittest.TestCase):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_monitor_disconnection_during_shutdown_is_treated_as_stopped(self) -> None:
+        state = VMState(Path('/unused'))
+        with patch.object(vm_control, 'qmp', side_effect=BrokenPipeError):
+            self.assertIsNone(state.running())
+        with patch.object(vm_control, 'qmp', side_effect=[{'status': 'running'}, BrokenPipeError(), BrokenPipeError()]):
+            state.stop(force=True)
+
     def test_qmp_negotiates_capabilities_and_ignores_events(self):
         with tempfile.TemporaryDirectory(prefix='omv-qmp-') as temporary, socket.socket(socket.AF_UNIX) as listener:
             path = Path(temporary) / 'qmp.sock'

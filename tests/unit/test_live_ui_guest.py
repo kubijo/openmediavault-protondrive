@@ -99,12 +99,17 @@ class LiveUIFixtureTests(unittest.TestCase):
             (flow / 'record.json').write_text('{"containers": ["already-removed"]}')
             override = root / 'override.conf'
             override.touch()
+
+            def write_config(value: object) -> None:
+                config.write_text(json.dumps(value))
+
             with (
                 patch.object(guest, 'FLOW', flow),
                 patch.object(guest, 'CONFIG', config),
                 patch.object(guest, 'STATE', root),
                 patch.object(guest, 'OVERRIDE', override),
                 patch.object(guest, 'active', return_value=False),
+                patch.object(guest, 'write_config', side_effect=write_config),
                 patch.object(
                     guest,
                     'run',
@@ -127,6 +132,7 @@ class LiveUIFixtureTests(unittest.TestCase):
                 patch.object(guest, 'STATE', root),
                 patch.object(guest, 'OVERRIDE', override),
                 patch.object(guest, 'active', return_value=False),
+                patch.object(guest, 'write_config', side_effect=write_config),
                 patch.object(guest, 'run', return_value=SimpleNamespace(stdout=b'')),
             ):
                 self.assertEqual(guest.cleanup(), {'cleaned': True})

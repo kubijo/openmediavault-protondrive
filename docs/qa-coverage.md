@@ -34,9 +34,11 @@ validates the installed units in the VM. See the [coverage policy](../infra/nix/
 [Guest tests](../tests/integration/README.md) cover filesystem metadata, private keyring sessions, OMV deployment,
 backup/restore and container recovery. They run the root/metadata tests skipped in the Nix sandbox. Proton is faked for
 the disposable backup tests. The opt-in `just vm::live` flow uses a signed-in development account for UI-triggered
-backup and real download/restore, then a controlled archive hold for UI cancellation and container recovery. Videos,
-screenshots, and a JSON report record the result. Initial sign-in and broader network-failure scenarios remain manual
-release checks. Guest images and the CLI are pinned; Debian/OMV apt dependencies are resolved at run time.
+backup and real download/restore, then a controlled archive hold for UI cancellation and container recovery.
+`just vm::retry` exercises a bounded upload network fault, preservation of pending archives, and retry before container
+stops, followed by download and restore. Videos, screenshots, and a JSON report record the result. Initial sign-in and
+broader network-failure scenarios remain manual release checks. Guest images and the CLI are pinned; Debian/OMV apt
+dependencies are resolved at run time.
 
 Upstream `LICENSE` text is preserved; Nix manages `flake.lock`. Generated outputs and caches are excluded. Lintian
 overrides cover OMV's required `/srv/salt` path and the unchanged vendor executable.

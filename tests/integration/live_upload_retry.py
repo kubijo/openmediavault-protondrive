@@ -2,7 +2,6 @@
 
 import argparse
 import hashlib
-import json
 import os
 import pwd
 import signal
@@ -12,7 +11,7 @@ import uuid
 from pathlib import Path
 
 from protondrive.archive import check_space, digest
-from protondrive.common import CONFIG, STATE, atomic_json, request
+from protondrive.common import STATE, atomic_json, request
 from protondrive.config import load, remote_folder, validate
 from protondrive.json_data import JSONValue, decode, integer, object_value
 from protondrive.models import RemoteEntry
@@ -54,38 +53,70 @@ def nft_items(*args: str) -> list[dict[str, JSONValue]]:
     return [object_value(entry) for entry in values]
 
 
-def table() -> dict[str, JSONValue] | None:
+def table_name(value: RetryRecord) -> str:
+    # Debian 12's nft JSON omits table comments, but always includes the name.
+    return f'{TABLE}_{uuid.UUID(value["token"]).hex}'
+
+
+def fault_tables() -> list[dict[str, JSONValue]]:
     tables = [object_value(entry['table']) for entry in nft_items('list', 'ruleset') if 'table' in entry]
-    return next(
-        (entry for entry in tables if entry.get('name') == TABLE and entry.get('family') == 'inet'),
-        None,
-    )
+    return [entry for entry in tables if str(entry.get('name', '')).startswith(TABLE) and entry.get('family') == 'inet']
+
+
+def table() -> dict[str, JSONValue] | None:
+    matches = fault_tables()
+    if len(matches) > 1:
+        raise RuntimeError('Multiple upload fault tables need inspection')
+    return matches[0] if matches else None
 
 
 def restore_network() -> None:
-    current = table()
-    if current is None:
+    flow.guard_vm()
+    matches = fault_tables()
+    if not matches:
         return
-    if current.get('comment') != read_record()['token']:
+    name = table_name(read_record())
+    owned = any(entry.get('name') == name for entry in matches)
+    if owned:
+        nft('delete', 'table', 'inet', name)
+    if any(entry.get('name') != name for entry in matches):
         raise RuntimeError('Refusing to remove a firewall table not owned by this flow')
-    nft('delete', 'table', 'inet', TABLE)
 
 
 def disarm() -> None:
-    if flow.run('systemctl', 'list-units', '--all', '--plain', '--no-legend', FAULT_UNIT).stdout.strip():
-        flow.run('systemctl', 'stop', FAULT_UNIT)
-    restore_network()
+    try:
+        if flow.run('systemctl', 'list-units', '--all', '--plain', '--no-legend', FAULT_UNIT).stdout.strip():
+            description = flow.run('systemctl', 'show', FAULT_UNIT, '--property=Description', '--value').stdout
+            if description.decode().strip() != f'Proton upload fault {read_record()["token"]}':
+                raise RuntimeError('Refusing to stop a fault watcher not owned by this flow')
+            flow.run('systemctl', 'stop', FAULT_UNIT)
+    finally:
+        restore_network()
 
 
 def remove_fixture() -> None:
     value = read_record()
+    if PAYLOAD.is_symlink():
+        raise RuntimeError('Retry payload identity changed; refusing removal')
     if not PAYLOAD.exists():
         return
-    if PAYLOAD.is_symlink() or [PAYLOAD.stat().st_dev, PAYLOAD.stat().st_ino] != value.get('payload_identity'):
+    if [PAYLOAD.stat().st_dev, PAYLOAD.stat().st_ino] != value.get('payload_identity'):
         raise RuntimeError('Retry payload identity changed; refusing removal')
     if value.get('payload_sha256') and digest(PAYLOAD) != value['payload_sha256']:
         raise RuntimeError('Retry payload contents changed; refusing removal')
     PAYLOAD.unlink()
+
+
+def wait_ready(timeout: float = 15) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            request('status', timeout=max(0.01, min(1, deadline - time.monotonic())))
+            return
+        except (FileNotFoundError, ConnectionRefusedError, TimeoutError):
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Proton service did not restart') from None
+            time.sleep(0.1)
 
 
 def prepare() -> dict[str, object]:
@@ -125,6 +156,7 @@ def prepare() -> dict[str, object]:
         item['remotekeep'] = max(2, item['remotekeep'])
     flow.prepare_containers(config, flow.record())
     flow.run('systemctl', 'restart', 'omv-protondrive')
+    wait_ready()
     helper = Path(__file__).resolve()
     flow.run(
         'systemd-run',
@@ -132,6 +164,7 @@ def prepare() -> dict[str, object]:
         '--collect',
         '--service-type=exec',
         f'--unit={FAULT_UNIT}',
+        f'--description=Proton upload fault {value["token"]}',
         '--property=RuntimeMaxSec=240s',
         '--property=TimeoutStopSec=15s',
         f'--property=ExecStopPost=/usr/bin/python3 {helper} restore-network',
@@ -142,6 +175,8 @@ def prepare() -> dict[str, object]:
     )
     deadline = time.monotonic() + 15
     while not read_record().get('armed'):
+        if read_record()['watcher_error']:
+            raise RuntimeError(f'Upload fault watcher failed: {read_record()["watcher_error"]}')
         if time.monotonic() >= deadline:
             raise RuntimeError('Upload fault watcher did not arm')
         time.sleep(0.1)
@@ -149,7 +184,7 @@ def prepare() -> dict[str, object]:
 
 
 def counter(name: str) -> int:
-    items = nft_items('list', 'counter', 'inet', TABLE, name)
+    items = nft_items('list', 'counter', 'inet', table_name(read_record()), name)
     return next(integer(object_value(entry['counter'])['bytes']) for entry in items if 'counter' in entry)
 
 
@@ -157,19 +192,20 @@ def watch() -> None:
     config = load()
     flow.guard(config)
     value = read_record()
+    fault_table = table_name(value)
     uid = str(pwd.getpwnam('protondrive').pw_uid)
     try:
         if table() is not None:
             raise RuntimeError('Fault table already exists')
-        nft('add', 'table', 'inet', TABLE, '{', 'comment', json.dumps(value['token']), ';', '}')
-        nft('add', 'chain', 'inet', TABLE, 'output', '{ type filter hook output priority -10; policy accept; }')
-        for name in ('sent', 'blocked'):
-            nft('add', 'counter', 'inet', TABLE, name)
+        nft('add', 'table', 'inet', fault_table)
+        nft('add', 'chain', 'inet', fault_table, 'output', '{ type filter hook output priority -10; policy accept; }')
+        for counter_name in ('sent', 'blocked'):
+            nft('add', 'counter', 'inet', fault_table, counter_name)
         nft(
             'add',
             'rule',
             'inet',
-            TABLE,
+            fault_table,
             'output',
             'meta',
             'skuid',
@@ -202,7 +238,7 @@ def watch() -> None:
                         'add',
                         'rule',
                         'inet',
-                        TABLE,
+                        fault_table,
                         'output',
                         'meta',
                         'skuid',
@@ -251,11 +287,22 @@ def confirmed_unchanged(before: list[RemoteEntry], after: list[RemoteEntry]) -> 
             raise RuntimeError('An existing remote entry changed during the failed upload')
 
 
-def failed() -> dict[str, object]:
-    flow.idle()
+def wait_failure(timeout: float = 10) -> RetryRecord:
+    deadline = time.monotonic() + timeout
     value = read_record()
+    while not value['failure_observed'] and not value['watcher_error']:
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
+        value = read_record()
     if not value.get('injected') or not value.get('failure_observed') or value.get('watcher_error'):
         raise RuntimeError(f'Upload fault was not proven: {value.get("watcher_error", "missing evidence")}')
+    return value
+
+
+def failed() -> dict[str, object]:
+    flow.idle()
+    value = wait_failure()
     disarm()
     config = load()
     current = flow.status()
@@ -281,8 +328,10 @@ def failed() -> dict[str, object]:
     remove_fixture()
     config['transfertimeout'] = validate(decode((flow.FLOW / 'config.json').read_text()))['transfertimeout']
     atomic_json(flow.FLOW / 'fixture-config.json', config)
-    atomic_json(CONFIG, config)
+    flow.write_config(config)
     flow.run('systemctl', 'restart', 'omv-protondrive')
+    wait_ready()
+    flow.wait_for_new_minute(config)
     value.update(pending_sha256=contents['sha256'], retry_since=time.time(), setuuid=item['uuid'])
     save_record(value)
     return {
@@ -361,7 +410,7 @@ def main() -> None:
     parser.add_argument('action', choices=['watch', 'restore-network'])
     action = parser.parse_args(namespace=Arguments()).action
     signal.signal(signal.SIGTERM, flow.interrupted)
-    flow.guard(load())
+    flow.guard_vm()
     if action == 'watch':
         watch()
     else:

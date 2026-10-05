@@ -7,6 +7,7 @@ import type { Page } from 'playwright-core';
 import { $ } from 'zx';
 import type { ProbeArtifacts } from './artifacts.ts';
 import { screenshot } from './artifacts.ts';
+import type { BackupStatus } from './backup-status.ts';
 import { readBackupStatus } from './backup-status.ts';
 import { collectGuestOutput } from './guest-output.ts';
 import { requireCondition } from './layout.ts';
@@ -375,6 +376,14 @@ async function uploadRetryFlow(
     progress: Progress,
     step: (action: GuestAction) => Promise<Record<string, unknown>>,
 ): Promise<void> {
+    await overview(page, options);
+    const original = (await readBackupStatus(page)).success;
+    await progress.stage('Create confirmed baseline from web UI', () =>
+        start(page, options, artifacts, 'retry-baseline'),
+    );
+    await progress.stage('Wait for confirmed baseline', stage => waitCompleted(page, original, stage));
+    await step('verify');
+    const previous = (await readBackupStatus(page)).success;
     await step('prepare-retry');
     await progress.stage('Start upload interruption test from web UI', () =>
         start(page, options, artifacts, 'interrupted-upload'),
@@ -386,15 +395,11 @@ async function uploadRetryFlow(
             if (status.transfer)
                 stage.update(status.transfer.phase, status.transfer.file, Number(status.transfer.elapsed));
             else stage.update(status.phase, status.item || undefined);
-            if (status.phase === 'failed') {
+            if (interruptedUploadFinished(status, previous)) {
                 await page.getByText('Not running', { exact: true }).waitFor();
                 await page.getByText('Last backup error:', { exact: true }).waitFor();
                 break;
             }
-            requireCondition(
-                status.phase !== 'completed',
-                'Upload completed instead of failing under the network fault',
-            );
             requireCondition(Date.now() < deadline, 'Timed out waiting for interrupted upload failure');
             await delay(1000);
         }
@@ -415,4 +420,13 @@ async function uploadRetryFlow(
         result.retried_before_container_stop === true && result.restored === true,
         'Missing retry and restore evidence',
     );
+}
+
+export function interruptedUploadFinished(status: BackupStatus, previous: string): boolean {
+    requireCondition(status.phase !== 'recovery-failed', 'Container recovery failed during upload interruption');
+    requireCondition(
+        status.phase !== 'completed' || status.success === previous,
+        'Upload completed instead of failing under the network fault',
+    );
+    return status.phase === 'failed';
 }

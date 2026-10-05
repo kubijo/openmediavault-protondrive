@@ -2,6 +2,7 @@
 
 import argparse
 import fcntl
+import grp
 import io
 import json
 import shutil
@@ -59,9 +60,13 @@ def status() -> BackupStatus:
     return backup_status(decode(path.read_text()) if path.exists() else {})
 
 
-def guard(config: Configuration) -> None:
+def guard_vm() -> None:
     if not Path('/var/lib/protondrive-interactive-vm').is_file():
         raise RuntimeError('Requires the interactive test VM')
+
+
+def guard(config: Configuration) -> None:
+    guard_vm()
     if config['remotepath'] != ROOT or config['enable']:
         raise RuntimeError('Requires the development root and disabled scheduling')
     if {item['name'] for item in config['sets']} != {'system', 'appData'} or len(config['sets']) != 2:
@@ -190,7 +195,12 @@ def prepare_containers(config: Configuration, value: FlowRecord) -> None:
         item['stopcontainers'] = True
     config['containerstoptimeout'] = 1
     atomic_json(FLOW / 'fixture-config.json', config)
-    atomic_json(CONFIG, config)
+    write_config(config)
+
+
+def write_config(value: object) -> None:
+    # Match Salt's policy before the new inode becomes visible to the service.
+    atomic_json(CONFIG, value, 0o640, owner=(0, grp.getgrnam('protondrive').gr_gid))
 
 
 def running(cid: str) -> bool:
@@ -256,7 +266,7 @@ def cleanup() -> dict[str, bool]:
     if fixture.exists():
         if decode(CONFIG.read_text()) not in (decode(fixture.read_text()), decode(saved.read_text())):
             raise RuntimeError('Configuration changed during the flow; refusing to overwrite it')
-        shutil.copy2(saved, CONFIG)
+        write_config(decode(saved.read_text()))
     OVERRIDE.unlink(missing_ok=True)
     run('systemctl', 'daemon-reload')
     remaining = run('docker', 'ps', '-aq', '--no-trunc', '--filter', f'label={LABEL}').stdout.decode().split()
@@ -268,6 +278,7 @@ def cleanup() -> dict[str, bool]:
     if retry:
         retry_module().remove_fixture()
         run('systemctl', 'restart', 'omv-protondrive')
+        retry_module().wait_ready()
     shutil.rmtree(FLOW)
     return {'cleaned': True}
 
@@ -278,6 +289,7 @@ class RetryHelper(Protocol):
     def verify(self) -> object: ...
     def disarm(self) -> None: ...
     def remove_fixture(self) -> None: ...
+    def wait_ready(self, timeout: float = 15) -> None: ...
 
 
 def retry_module() -> RetryHelper:
@@ -316,7 +328,10 @@ def main() -> None:
     }
     parser.add_argument('action', choices=actions)
     action = parser.parse_args(namespace=Arguments()).action
-    guard(load())
+    if action == 'cleanup':
+        guard_vm()
+    else:
+        guard(load())
     print(json.dumps(actions[action]()))
 
 

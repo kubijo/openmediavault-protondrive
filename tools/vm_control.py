@@ -68,7 +68,7 @@ class VMState:
     def running(self) -> dict[str, object] | None:
         try:
             return qmp(self.monitor, 'query-status')
-        except (FileNotFoundError, ConnectionRefusedError, ConnectionResetError):
+        except (FileNotFoundError, ConnectionRefusedError, ConnectionResetError, BrokenPipeError):
             return None
 
     @contextmanager
@@ -94,7 +94,7 @@ class VMState:
                 request_shutdown()
             else:
                 qmp(self.monitor, 'quit' if force else 'system_powerdown')
-        except (ConnectionResetError, ConnectionRefusedError, FileNotFoundError):
+        except (ConnectionResetError, ConnectionRefusedError, FileNotFoundError, BrokenPipeError):
             pass
         deadline = time.monotonic() + timeout
         while self.running() is not None:

@@ -25,11 +25,13 @@ class BackupError(Exception):
     """An actionable backup failure safe to present to the administrator."""
 
 
-def atomic_json(path: str | Path, value: object, mode: int = 0o600) -> None:
+def atomic_json(path: str | Path, value: object, mode: int = 0o600, *, owner: tuple[int, int] | None = None) -> None:
     path = Path(path)
     fd, tmp = tempfile.mkstemp(prefix='.write-', dir=path.parent)
     try:
         with os.fdopen(fd, 'w') as stream:
+            if owner is not None:
+                os.fchown(stream.fileno(), *owner)
             os.fchmod(stream.fileno(), mode)
             json.dump(value, stream, sort_keys=True)
             stream.write('\n')
@@ -62,25 +64,30 @@ def locked(path: str | Path) -> Generator[None, None, None]:
 
 @overload
 def request(
-    operation: Literal['status', 'probe', 'start-auth', 'cancel-auth', 'logout'], **params: JSONValue
+    operation: Literal['status', 'probe', 'start-auth', 'cancel-auth', 'logout'],
+    *,
+    timeout: float | None = None,
+    **params: JSONValue,
 ) -> ServiceStatus: ...
 
 
 @overload
-def request(operation: Literal['prepare'], **params: JSONValue) -> list[RemoteEntry]: ...
+def request(
+    operation: Literal['prepare'], *, timeout: float | None = None, **params: JSONValue
+) -> list[RemoteEntry]: ...
 
 
 @overload
-def request(operation: Literal['upload'], **params: JSONValue) -> Manifest: ...
+def request(operation: Literal['upload'], *, timeout: float | None = None, **params: JSONValue) -> Manifest: ...
 
 
 @overload
-def request(operation: str, **params: JSONValue) -> object: ...
+def request(operation: str, *, timeout: float | None = None, **params: JSONValue) -> object: ...
 
 
-def request(operation: str, **params: JSONValue) -> object:
+def request(operation: str, *, timeout: float | None = None, **params: JSONValue) -> object:
     with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(5 if operation == 'cancel-transfer' else 86500)
+        client.settimeout(timeout if timeout is not None else (5 if operation == 'cancel-transfer' else 86500))
         client.connect(str(SOCKET))
         client.sendall(json.dumps({'operation': operation, **params}).encode() + b'\n')
         with client.makefile('rb') as stream:

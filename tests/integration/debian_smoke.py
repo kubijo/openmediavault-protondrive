@@ -9,10 +9,8 @@ from cli_options import parse_options
 from tool_data import decode, mapping, string
 
 SOURCE = Path(__file__).resolve().parents[2]
-DEBIAN = {
-    key: string(value)
-    for key, value in mapping(decode((SOURCE / 'config/sources.json').read_text())['debian-container']).items()
-}
+DEBIAN = mapping(decode((SOURCE / 'config/sources.json').read_text())['debian-container'])
+IMAGE = f'{string(DEBIAN["image"])}:{string(DEBIAN["tag"])}@{string(DEBIAN["digest"])}'
 
 
 @dataclass
@@ -35,7 +33,7 @@ def main(options: Options):
                 name,
                 '--mount',
                 f'type=bind,src={source},dst=/src,readonly',
-                f'{DEBIAN["image"]}:{DEBIAN["tag"]}@{DEBIAN["digest"]}',
+                IMAGE,
                 'sleep',
                 'infinity',
             ],
