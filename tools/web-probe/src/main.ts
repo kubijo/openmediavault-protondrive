@@ -5,12 +5,14 @@ import type { Browser, Page } from 'playwright-core';
 import { chromium } from 'playwright-core';
 import type { ProbeArtifacts } from './artifacts.ts';
 import { screenshot } from './artifacts.ts';
+import { BrowserErrors } from './browser-errors.ts';
 import { Cancellation, ProbeCancelled } from './cancellation.ts';
 import { checkOverviewLayout, checkSetsStart, requireCondition, scrollSetsRight } from './layout.ts';
 import { GuestCommandError, runLiveFlow } from './live.ts';
 import type { ProbeOptions } from './options.ts';
 import { optionsFromArgs } from './options.ts';
 import { Progress } from './progress.ts';
+import { prepareBrowserReboot } from './session.ts';
 
 export type { ProbeOptions } from './options.ts';
 
@@ -98,12 +100,8 @@ async function runViewport(
     signal.addEventListener('abort', closePage, { once: true });
     let failure: unknown;
     let outcome: ViewportResult | undefined;
-    const errors: string[] = [];
+    const browserErrors = new BrowserErrors(page);
     const screenshots = artifacts.screenshots;
-    page.on('pageerror', error => errors.push(error.message));
-    page.on('console', message => {
-        if (message.type() === 'error') errors.push(message.text());
-    });
     try {
         signal.throwIfAborted();
         await progress.stage('Log in to OMV', () => login(page, options), { viewport: width });
@@ -183,8 +181,19 @@ async function runViewport(
             await progress.stage('Change backup root', () => changeRoot(page, options, root, screenshots), {
                 viewport: width,
             });
-        if (options.live) await runLiveFlow(page, options, artifacts, progress, signal);
+        if (options.live)
+            await runLiveFlow(
+                page,
+                options,
+                artifacts,
+                progress,
+                signal,
+                () => login(page, options),
+                () => prepareBrowserReboot(page),
+                browserErrors,
+            );
         signal.throwIfAborted();
+        const errors = browserErrors.messages();
         requireCondition(errors.length === 0, `Browser errors at ${width}px: ${errors.join('; ')}`);
         outcome = { remoteFolder };
     } catch (error) {

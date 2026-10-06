@@ -178,6 +178,10 @@ explicitly pass `--recover`. Recovery failures retain their evidence for inspect
 user, then checks preservation, UI-triggered retry ordering, and download/restore of the retained archive. The watcher
 and cleanup remove only rules owned by that run; configuration and container fixtures are restored on exit.
 
+`just vm::crash` starts real backups through the web UI, tests SIGKILL and an abrupt VM reset with blocked container
+restarts, then verifies retained recovery records, pending archives, and failed and successful recovery through the web
+UI. See `just vm::crash --help`.
+
 ## Remaining authenticated/manual release gates
 
 Run these on a disposable Debian 12 / OMV 7 amd64 VM. Use test containers and a dedicated Proton folder. These are
@@ -192,9 +196,9 @@ manual release gates; local unit tests do not claim to have exercised them.
     output to fixtures before release; never include sign-in URLs or credentials.
 04. Back up fixture data with a numeric owner different from the VM administrator, setgid, ACLs, xattrs, symlinks and
     excluded directories. Download through Proton and complete the checksum, extraction and database restore exercise.
-05. During container archiving, send SIGTERM and SIGKILL to the runner in separate tests. Confirm all recorded
-    containers resume, while previously stopped containers remain stopped. Repeat with a VM reboot and with a failed
-    Docker start. The recovery record must remain until the final container is running.
+05. Run `just vm::live` for SIGTERM and `just vm::crash` for SIGKILL, abrupt reboot, and failed Docker start recovery.
+    Confirm originally running containers resume, stopped containers stay stopped, and incomplete recovery retains its
+    record until a successful retry.
 06. Run `just vm::retry` for upload interruption and network recovery. Also inject tar failure, low/full staging space,
     and missing sources. Confirm no incomplete archive is published, pending complete archives survive, and a failed
     backup never removes the last confirmed copy. Resume and verify pending uploads are retried before containers are

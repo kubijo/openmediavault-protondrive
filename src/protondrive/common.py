@@ -6,6 +6,7 @@ import json
 import os
 import socket
 import tempfile
+import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Literal, overload
@@ -53,12 +54,19 @@ def sync_directory(path: str | Path) -> None:
 
 
 @contextlib.contextmanager
-def locked(path: str | Path) -> Generator[None, None, None]:
+def locked(path: str | Path, *, timeout: float | None = 0) -> Generator[None, None, None]:
+    """Acquire immediately by default; None waits indefinitely, positive values bound the wait."""
+    deadline = time.monotonic() + timeout if timeout is not None else None
     with open(path, 'a') as stream:
-        try:
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise BackupError('Another backup or recovery is running') from exc
+        while True:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | (fcntl.LOCK_NB if deadline is not None else 0))
+                break
+            except BlockingIOError as exc:
+                remaining = deadline - time.monotonic() if deadline is not None else 0
+                if remaining <= 0:
+                    raise BackupError('Another backup or recovery is running') from exc
+                time.sleep(min(0.05, remaining))
         yield
 
 

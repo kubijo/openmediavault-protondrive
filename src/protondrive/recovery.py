@@ -28,6 +28,8 @@ class Recovery:
         self.command = command
 
     def restore(self) -> None:
+        if self.path.is_symlink():
+            raise BackupError('Container recovery record must not be a symlink; administrator recovery required')
         if not self.path.exists():
             return
         record = decode(self.path.read_text())

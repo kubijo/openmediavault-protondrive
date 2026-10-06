@@ -9,8 +9,10 @@ import sys
 
 from .common import STATE, BackupError, locked, request
 from .config import load, validate
+from .health import CHECKS, Check, check_health
 from .json_data import JSONValue, decode, object_value
 from .models import ServiceStatus
+from .monitoring import set_monitoring
 from .recovery import Recovery
 
 UNIT = 'omv-protondrive-backup.service'
@@ -54,6 +56,7 @@ def recover() -> None:
 
 class Arguments(argparse.Namespace):
     command: str = ''
+    check: Check | None = None
 
 
 def main() -> None:
@@ -74,12 +77,20 @@ def main() -> None:
             'check-idle',
             'validate',
             'validate-stdin',
+            'health',
+            'monitor',
+            'unmonitor',
         ],
     )
+    parser.add_argument('check', nargs='?', choices=CHECKS)
     args = parser.parse_args(namespace=Arguments())
+    if (args.command == 'health') != (args.check is not None):
+        parser.error('health requires a check; other commands do not accept one')
     if args.command != 'daemon' and os.geteuid() != 0 and args.command not in ('validate', 'validate-stdin'):
         raise BackupError('This operation requires root')
-    if args.command == 'daemon':
+    if args.command == 'health' and args.check is not None:
+        sys.exit(check_health(args.check))
+    elif args.command == 'daemon':
         from .daemon import serve
 
         serve()
@@ -91,6 +102,8 @@ def main() -> None:
         follow_run()
     elif args.command == 'recover':
         recover()
+    elif args.command in ('monitor', 'unmonitor'):
+        set_monitoring(args.command == 'monitor')
     elif args.command == 'check-idle':
         idle()
     elif args.command == 'validate':
@@ -127,6 +140,21 @@ def main() -> None:
             if (STATE / 'status.json').exists():
                 value.update(object_value(decode((STATE / 'status.json').read_text())))
             value['running'] = active()
+            recovery = STATE / 'recovery.json'
+            value['recoverypending'] = not value['running'] and (recovery.exists() or recovery.is_symlink())
+            if value['recoverypending']:
+                value['phase'] = 'recovery-required'
+            elif not value['running'] and value['phase'] in (
+                'preflight',
+                'stopping-containers',
+                'archiving',
+                'recovering-containers',
+                'verifying',
+                'uploading',
+                'retention',
+                'recovery-failed',
+            ):
+                value['phase'] = 'interrupted'
             value.update(
                 transferphase=auth.get('transferphase', '') if value['running'] else '',
                 transferfile=auth.get('transferfile', '') if value['running'] else '',

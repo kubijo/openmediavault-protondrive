@@ -6,6 +6,20 @@ omv-intuition-form form:has(.protondrive-status-heading) {
     margin-top: 24px;
 }
 
+.protondrive-recovery-warning {
+    background-color: color-mix(in srgb, #e0a529 12%, var(--mat-background-color-background));
+    border-inline-start: 3px solid #e0a529;
+    padding: 12px;
+}
+
+.protondrive-recovery-warning > p {
+    margin: 0;
+}
+
+.protondrive-recovery-warning > p + p {
+    margin-top: 8px;
+}
+
 /* OMV emits empty paragraph wrappers for hidden status fields. */
 omv-intuition-form form:has(.protondrive-status-heading) > p:empty {
     display: none;

@@ -29,6 +29,7 @@ let
       pkgs.cdrkit
       pkgs.nginx
       pkgs.just
+      pkgs.monit
     ];
     text = ''
       export PYTHONPATH="$PWD/src:$PWD/tests/unit:$PWD/tools"

@@ -9,6 +9,7 @@ from types import FrameType
 
 from .archive import archive, check_space, estimate, publish
 from .common import STATE, BackupError, atomic_json, locked, request
+from .completion import record_completion
 from .config import load, remote_folder
 from .json_data import JSONValue, decode, object_value
 from .models import BackupSet, Configuration, Manifest
@@ -129,10 +130,12 @@ def run() -> None:
                 status('retention', sets=results)
                 request('prune', setuuid=item['uuid'])
                 prune_local(config, item, final.parent)
+            completed = datetime.now(UTC).isoformat()
+            record_completion(STATE, completed)
             status(
                 'completed',
                 sets=results,
-                lastsuccess=datetime.now(UTC).isoformat(),
+                lastsuccess=completed,
                 finished=datetime.now(UTC).isoformat(),
             )
         except BaseException as exc:

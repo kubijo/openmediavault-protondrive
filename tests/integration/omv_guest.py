@@ -79,6 +79,7 @@ def main(package: Path):
     run('python3', '/src/tests/integration/lifecycle_guest.py')
     run('python3', '/src/tests/integration/backup_guest.py')
     run('lintian', '--allow-root', str(package))
+    run('python3', '/src/tests/integration/notification_guest.py', str(package))
     print('PASS: OMV installation, RPC defaults, Salt deploy twice, units, workbench, lifecycle')
 
 

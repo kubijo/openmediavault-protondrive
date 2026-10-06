@@ -13,6 +13,7 @@ let
     "src/protondrive" = "usr/share/openmediavault-protondrive/protondrive";
     "src/omv" = "usr/share/openmediavault";
     "src/salt" = "srv/salt/omv/deploy/protondrive";
+    "src/monit/protondrive.sls" = "srv/salt/omv/deploy/monit/services/protondrive.sls";
     "src/web/protondrive.css" = "usr/share/openmediavault-protondrive/protondrive.css";
     "src/nginx/90-protondrive.conf" = "etc/nginx/openmediavault-webgui.d/90-protondrive.conf";
   };

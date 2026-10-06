@@ -46,6 +46,10 @@ stopped interval and restarts those same containers before verification and uplo
 trigger recovery. Systemd runs recovery after abnormal runner termination; boot recovery handles power loss. A failed
 restart leaves a durable recovery record and fails the job. A second backup cannot run concurrently.
 
+When recovery remains pending, the overview shows **Recovery required**. Use **Recover containers** to retry restarting
+the containers that were running before the backup. Failed attempts keep the warning and recovery record; **Run now**
+becomes available again after recovery succeeds. Container recovery does not require a Proton sign-in.
+
 **Cancel backup** stops the supervised job and restores containers. Closing the browser or losing its connection leaves
 the job running. Configuration saves and Salt deployment check that no backup is active.
 
@@ -68,3 +72,33 @@ are operation timings; the Proton CLI does not expose machine-readable byte prog
 Pending uploads are retried before a new archive cycle. A failed retry postpones new archiving. Before stopping
 containers, the runner checks estimated uncompressed source size plus a configurable free-space reserve; it also checks
 free space while tar runs. Source growth and unrelated filesystem writes can still cause a run to fail.
+
+## Notifications
+
+Configure delivery under **System → Notification → Settings**, then enable the desired **Proton Drive** events under
+**Events** and apply the changes. Backup failure, container recovery, authentication, and service availability are
+separate opt-in events. Delivery uses OMV's existing mail configuration and notification sinks.
+
+OMV's Monit runs bounded health checks independently of the Proton daemon. It sends an alert when a check becomes
+unhealthy and a recovery message when it becomes healthy again, without repeating unchanged failures. Authentication and
+service outages require two failed polling cycles to avoid short restart/sign-in interruptions. Checks use OMV's polling
+interval (normally 30 seconds); alerts are not immediate, and failures that clear between polls may not be seen. Monit's
+existing event queue handles unavailable mail delivery. Mail contains fixed actionable messages, not account responses,
+login URLs, tokens, or raw command errors.
+
+A retry does not clear an observed backup failure until a new successful completion is observed. The runner records an
+increasing completion counter separately from the UI status, so clock corrections do not hide a successful retry. Older
+installations retain their latest observed completion timestamp until the successful runner establishes a counter
+baseline. The runner advances beyond both the completion record and the saved health counter, so losing or restoring an
+older completion record does not require extra successful backups to clear an incident. Rebooting, resetting systemd's
+failed state, or restoring an older status file cannot clear an incident. Interrupted runs, including cancelled runs,
+remain unhealthy until a successful backup. Container recovery has its own alert and clears when the recovery record is
+removed, even if the backup still needs retrying. An unavailable daemon does not clear an existing authentication alert.
+Invalid or unreadable health inputs fail the check instead of reporting success. The checks retain their last conclusive
+observations in root-owned `health-*.json` files in the plugin state directory; they never rewrite backup or recovery
+records. These notifications complement the persistent **Recovery required** warning in the overview.
+
+Package maintenance suspends these monitors after successful container recovery, before stopping the daemon. Applying
+configuration re-enables them; an aborted package operation also re-enables them. Failed container recovery blocks
+removal and leaves monitoring enabled. Removal also works when a failed deployment left checks unregistered; an
+unreachable monitoring daemon is still an error. Notification choices and identifiers survive upgrades.

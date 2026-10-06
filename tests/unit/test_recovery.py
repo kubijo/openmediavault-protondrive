@@ -31,6 +31,21 @@ class RecoveryTests(unittest.TestCase):
             self.running[args[-1]] = True
         return ''
 
+    def test_symlinked_recovery_evidence_is_rejected_and_preserved(self) -> None:
+        record = self.state / 'recovery.json'
+        target = self.state / 'elsewhere.json'
+        for content in (None, '{"ids": []}'):
+            if content is not None:
+                target.write_text(content)
+            record.symlink_to(target)
+            with self.assertRaisesRegex(BackupError, 'symlink'):
+                Recovery(self.state, self.docker).restore()
+            self.assertTrue(record.is_symlink())
+            self.assertFalse(self.calls)
+            if content is not None:
+                self.assertEqual(target.read_text(), content)
+            record.unlink()
+
     def test_only_previously_running_containers_restarted(self):
         recovery = Recovery(self.state, self.docker)
         recovery.stop(120)

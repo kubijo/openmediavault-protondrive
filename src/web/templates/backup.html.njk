@@ -2,8 +2,15 @@
 {% if authstate == 'loading' %}
     <p>Loading backup status…</p>
 {% else %}
-    <p><strong>{{ 'Running' if running else 'Not running' }}</strong></p>
-    {% if phase and phase != 'idle' %}
+    {% if recoverypending | default(false) %}
+        <div role="alert" class="protondrive-recovery-warning">
+            <p><strong>Recovery required</strong></p>
+            <p>A backup was interrupted. Containers may still be stopped. Use Recover containers to restore those that were running before the backup.</p>
+        </div>
+    {% else %}
+        <p><strong>{{ 'Running' if running else 'Not running' }}</strong></p>
+    {% endif %}
+    {% if phase and phase != 'idle' and not recoverypending | default(false) %}
         <p>Last reported phase: {{ phase | escape }}</p>
     {% endif %}
     {% if running and transferphase | default('') %}

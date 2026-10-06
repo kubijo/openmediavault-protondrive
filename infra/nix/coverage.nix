@@ -48,6 +48,7 @@ in
         "src/salt/**/*.sls"
         "src/salt/**/*.j2"
         "src/salt/**/*.jinja"
+        "src/monit/*.sls"
         "src/omv/datamodels/*.json"
         "src/omv/workbench/**/*.yaml"
         "src/web/templates/*.njk"

@@ -52,6 +52,10 @@ live *args:
 retry *args:
     nix run {{ nix_args }} .#web-probe -- --live --upload-retry "$@"
 
+# Verify real runner SIGKILL, failed container restart, and abrupt VM reboot recovery.
+crash *args:
+    nix run {{ nix_args }} .#web-probe -- --live --crash-recovery "$@"
+
 # Exercise disposable init, web changes, snapshot restore, reset, and backup restore.
 flow:
     python3 tools/vm_flow.py

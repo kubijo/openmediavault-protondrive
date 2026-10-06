@@ -34,6 +34,10 @@ def to_bool(value: object) -> bool:
 
 
 def get_model(model: str) -> object:
+    if model == 'conf.system.notification.email':
+        return email_config
+    if model == 'conf.system.notification.notification':
+        return notifications
     return [item] if model.endswith('.set') else config
 
 
@@ -43,18 +47,26 @@ def pillar_get(_name: str, default: object) -> object:
 
 env.filters.update(json=json.dumps, to_bool=to_bool)
 directory = ROOT / 'src/salt'
+email_config = {'enable': False, 'primaryemail': 'admin@example.invalid'}
+notifications = [{'id': 'protondrivebackup', 'enable': True}]
 for enabled in (False, True):
     config['enable'] = enabled
+    email_config['enable'] = enabled
     salt = {
         'omv_utils.register_jinja_filters': lambda: None,
         'omv_conf.get': get_model,
         'pillar.get': pillar_get,
     }
-    for path in directory.rglob('*'):
+    for path in [*directory.rglob('*'), *(ROOT / 'src/monit').rglob('*')]:
         if path.suffix not in ('.sls', '.j2', '.jinja'):
             continue
         output = env.from_string(path.read_text()).render(
-            config=config, sets=[item], salt=salt, tpldir='omv/deploy/protondrive'
+            config=config,
+            sets=[item],
+            salt=salt,
+            tpldir='omv/deploy/protondrive',
+            email_config=email_config,
+            notifications=notifications,
         )
         if path.suffix == '.sls':
             value = cast(object, yaml.safe_load(output))

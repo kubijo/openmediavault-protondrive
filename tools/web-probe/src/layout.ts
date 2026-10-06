@@ -62,8 +62,8 @@ export async function checkOverviewLayout(page: Page, width: number): Promise<vo
     );
     const buttons = geometry.buttons.filter(button => button.visible);
     requireCondition(
-        geometry.buttons.length === 7,
-        `Expected seven overview actions, found ${geometry.buttons.length}`,
+        geometry.buttons.length === 8,
+        `Expected eight overview actions, found ${geometry.buttons.length}`,
     );
     requireCondition(
         geometry.buttons.every(button => button.disabled || button.visible),

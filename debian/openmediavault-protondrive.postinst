@@ -1,21 +1,40 @@
 #!/bin/sh
 set -eu
+
 # shellcheck disable=SC1091
 . /usr/share/openmediavault/scripts/helper-functions
+
 case "$1" in
-configure)
-    if ! getent passwd protondrive >/dev/null; then
-        useradd --system --user-group --no-create-home --home-dir /var/lib/openmediavault-protondrive/proton --shell /usr/sbin/nologin protondrive
-    fi
-    install -d -o root -g protondrive -m 0750 /var/lib/openmediavault-protondrive
-    install -d -o protondrive -g protondrive -m 0700 /var/lib/openmediavault-protondrive/proton
-    omv-confdbadm create conf.service.protondrive
-    if [ -n "${2:-}" ]; then
-        omv-confdbadm migrate conf.service.protondrive "$2"
-    fi
-    omv_module_set_dirty protondrive
-    omv_module_set_dirty nginx
-    dpkg-trigger update-workbench
-    ;;
-abort-upgrade | abort-remove | abort-deconfigure) ;;
+    configure)
+        if ! getent passwd protondrive >/dev/null; then
+            useradd --system --user-group --no-create-home --home-dir /var/lib/openmediavault-protondrive/proton --shell /usr/sbin/nologin protondrive
+        fi
+
+        install -d -o root -g protondrive -m 0750 /var/lib/openmediavault-protondrive
+        install -d -o protondrive -g protondrive -m 0700 /var/lib/openmediavault-protondrive/proton
+        omv-confdbadm create conf.service.protondrive
+
+        if [ -n "${2:-}" ]; then
+            omv-confdbadm migrate conf.service.protondrive "$2"
+        fi
+
+        for event in backup recovery auth service; do
+            id="protondrive$event"
+            if ! omv-confdbadm exists --filter "{\"operator\":\"stringEquals\",\"arg0\":\"id\",\"arg1\":\"$id\"}" conf.system.notification.notification; then
+                omv-confdbadm read --defaults conf.system.notification.notification \
+                    | jq --arg id "$id" '.id = $id | .enable = false' \
+                    | omv-confdbadm update conf.system.notification.notification -
+            fi
+        done
+
+        omv_module_set_dirty protondrive
+        omv_module_set_dirty monit
+        omv_module_set_dirty nginx
+        dpkg-trigger update-workbench
+        ;;
+    abort-upgrade | abort-remove | abort-deconfigure)
+        if [ -f /etc/monit/conf.d/openmediavault-protondrive.conf ] && systemctl is-active --quiet monit; then
+            /usr/sbin/omv-protondrive monitor
+        fi
+        ;;
 esac

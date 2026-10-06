@@ -6,7 +6,8 @@ namespace Engined\Module;
 
 class ProtonDrive extends \OMV\Engine\Module\ServiceAbstract implements
     \OMV\Engine\Notify\IListener,
-    \OMV\Engine\Module\IServiceStatus
+    \OMV\Engine\Module\IServiceStatus,
+    \OMV\Engine\Module\INotification
 {
     public function getName()
     {
@@ -23,6 +24,37 @@ class ProtonDrive extends \OMV\Engine\Module\ServiceAbstract implements
             'enabled' => $object->get('enable'),
             'running' => $service->isActive(),
         ];
+    }
+
+    public function getNotificationConfig()
+    {
+        return [
+            [
+                'id' => 'protondrivebackup',
+                'type' => gettext('Backup'),
+                'title' => gettext('Proton Drive - Backup failure'),
+            ],
+            [
+                'id' => 'protondriverecovery',
+                'type' => gettext('Backup'),
+                'title' => gettext('Proton Drive - Container recovery'),
+            ],
+            [
+                'id' => 'protondriveauth',
+                'type' => gettext('Backup'),
+                'title' => gettext('Proton Drive - Authentication'),
+            ],
+            [
+                'id' => 'protondriveservice',
+                'type' => gettext('Backup'),
+                'title' => gettext('Proton Drive - Service availability'),
+            ],
+        ];
+    }
+
+    public function deployBefore(): array
+    {
+        return ['monit'];
     }
 
     public function bindListeners(\OMV\Engine\Notify\Dispatcher $dispatcher)

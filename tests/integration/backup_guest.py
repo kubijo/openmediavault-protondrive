@@ -7,9 +7,9 @@ import time
 from pathlib import Path
 
 if __package__:
-    from .guest_support import decode, items, mapping, run
+    from .guest_support import decode, integer, items, mapping, run
 else:
-    from guest_support import decode, items, mapping, run
+    from guest_support import decode, integer, items, mapping, run
 
 from omv_guest import rpc
 
@@ -40,9 +40,15 @@ def configure():
 
 
 def run_backup():
+    completion = STATE / 'backup-completion.json'
+    previous = integer(decode(completion.read_text())['generation']) if completion.exists() else 0
     subprocess.run(['systemctl', 'reset-failed', BACKUP], check=False)
     run('systemctl', 'start', BACKUP)
-    assert decode((STATE / 'status.json').read_text())['phase'] == 'completed'
+    status = decode((STATE / 'status.json').read_text())
+    assert status['phase'] == 'completed'
+    recorded = decode(completion.read_text())
+    assert recorded['generation'] == previous + 1
+    assert recorded['timestamp'] == status['lastsuccess']
 
 
 def main():

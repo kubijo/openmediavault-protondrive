@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 from helpers import configuration
 from protondrive import runner
 from protondrive.common import BackupError
+from protondrive.completion import read_completion
 from protondrive.json_data import decode, object_value
 from protondrive.models import BackupSet
 
@@ -74,9 +75,15 @@ class RunnerTests(unittest.TestCase):
                 self.assertNotIn('upload', events)
                 self.assertFalse(list((root / 'staging').rglob('*.partial')))
                 self.assertEqual(events[-1], 'restore')
+                self.assertIsNone(read_completion(root))
             else:
                 runner.run()
                 self.assertEqual(events, ['restore', 'stop', 'archive', 'restore', 'publish', 'upload'])
+                completion = read_completion(root)
+                assert completion is not None
+                self.assertEqual(completion.generation, 1)
+                status = object_value(decode((root / 'status.json').read_text()))
+                self.assertEqual(completion.timestamp, status['lastsuccess'])
 
     def test_containers_restart_before_verification_and_upload(self):
         self.exercise()

@@ -27,6 +27,7 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
             'logout',
             'runNow',
             'cancelRun',
+            'recoverContainers',
         ] as $method) {
             $this->registerMethod($method);
         }
@@ -195,6 +196,12 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
     {
         $this->admin($context);
         return $this->background('cancel-run');
+    }
+
+    public function recoverContainers($params, $context)
+    {
+        $this->admin($context);
+        return $this->background('recover');
     }
 
     private function background($operation)

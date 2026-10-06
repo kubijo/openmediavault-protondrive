@@ -11,11 +11,61 @@ from unittest.mock import patch
 
 from helpers import configuration
 from protondrive import cli as commands
+from protondrive.common import BackupError, atomic_json, locked
 from protondrive.json_data import decode, object_value
 from protondrive.protoncli import ProtonCli
 
 
 class AuthTests(unittest.TestCase):
+    def test_backup_status_distinguishes_pending_recovery_from_a_running_backup(self) -> None:
+        for running, record, phase, expected in (
+            (False, True, 'archiving', 'recovery-required'),
+            (False, True, 'completed', 'recovery-required'),
+            (True, True, 'archiving', 'archiving'),
+            (False, False, 'archiving', 'interrupted'),
+            (False, False, 'recovery-failed', 'interrupted'),
+            (False, False, 'completed', 'completed'),
+            (False, False, 'failed', 'failed'),
+        ):
+            with self.subTest(running=running, record=record, phase=phase), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory)
+                saved = {'phase': phase, 'lastsuccess': 'previous success', 'error': 'previous error'}
+                atomic_json(state / 'status.json', saved)
+                before = (state / 'status.json').read_bytes()
+                if record:
+                    # Even an unreadable record must remain visible to the administrator.
+                    (state / 'recovery.json').write_text('invalid JSON')
+                output = io.StringIO()
+                with (
+                    patch.object(commands, 'STATE', state),
+                    patch.object(commands, 'request', side_effect=BackupError('service unavailable')),
+                    patch.object(commands, 'active', return_value=running),
+                    patch.object(commands.os, 'geteuid', return_value=0),
+                    patch.object(commands.sys, 'argv', ['omv-protondrive', 'status']),
+                    contextlib.redirect_stdout(output),
+                ):
+                    commands.main()
+                value = object_value(decode(output.getvalue()))
+                self.assertEqual(value['phase'], expected)
+                self.assertEqual(value['recoverypending'], record and not running)
+                self.assertEqual(value['lastsuccess'], saved['lastsuccess'])
+                self.assertEqual(value['authstate'], 'unavailable')
+                self.assertEqual((state / 'status.json').read_bytes(), before)
+                if record:
+                    self.assertEqual((state / 'recovery.json').read_text(), 'invalid JSON')
+
+    def test_recovery_entry_point_respects_the_runner_lock_and_propagates_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(commands, 'STATE', Path(directory)):
+            with locked(Path(directory) / 'run.lock'), patch.object(commands, 'Recovery') as recovery:
+                with self.assertRaisesRegex(BackupError, 'Another backup or recovery is running'):
+                    commands.recover()
+                recovery.assert_not_called()
+            with (
+                patch.object(commands, 'Recovery', side_effect=BackupError('recovery incomplete')),
+                self.assertRaisesRegex(BackupError, 'recovery incomplete'),
+            ):
+                commands.recover()
+
     def test_status_commands_pass_account_details_to_the_ui(self):
         auth = {'state': 'signed-in', 'url': '', 'error': '', 'email': 'test@example.org', 'organization': 'Test team'}
         for command in ('status', 'auth-status'):

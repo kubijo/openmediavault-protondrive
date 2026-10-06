@@ -165,7 +165,7 @@ def prepare_cancel() -> dict[str, bool]:
     return {'armed': True}
 
 
-def prepare_containers(config: Configuration, value: FlowRecord) -> None:
+def prepare_containers(config: Configuration, value: FlowRecord, *, restart_gate: Path | None = None) -> None:
     # Import a local static busybox; no image registry or application data is used.
     with io.BytesIO() as stream:
         with tarfile.open(fileobj=stream, mode='w') as archive:
@@ -180,6 +180,11 @@ def prepare_containers(config: Configuration, value: FlowRecord) -> None:
                 LABEL,
                 '--name',
                 f'protondrive-ui-{name}',
+                *(
+                    ['--mount', f'type=bind,src={restart_gate},dst=/restart-gate,readonly']
+                    if restart_gate is not None and name == 'running'
+                    else []
+                ),
                 IMAGE,
                 '/busybox',
                 'sleep',
@@ -243,8 +248,11 @@ def cleanup() -> dict[str, bool]:
     if not FLOW.exists():
         return {'cleaned': True}
     retry = (FLOW / 'retry.json').exists()
+    crash = (FLOW / 'crash.json').exists()
     if retry:
         retry_module().disarm()
+    if crash:
+        crash_module().restore_gate()
     # An interrupted initialization cannot have created any external fixtures.
     # Refuse partial records alongside evidence of later mutation.
     if not (FLOW / 'record.json').exists():
@@ -279,6 +287,8 @@ def cleanup() -> dict[str, bool]:
         retry_module().remove_fixture()
         run('systemctl', 'restart', 'omv-protondrive')
         retry_module().wait_ready()
+    if crash:
+        crash_module().remove_fixtures()
     shutil.rmtree(FLOW)
     return {'cleaned': True}
 
@@ -310,6 +320,26 @@ class Arguments(argparse.Namespace):
     action: str = ''
 
 
+class CrashHelper(Protocol):
+    def prepare(self) -> object: ...
+    def kill(self) -> object: ...
+    def failed(self) -> object: ...
+    def allow_recovery(self) -> object: ...
+    def recovered(self) -> object: ...
+    def rearm(self) -> object: ...
+    def reboot_ready(self) -> object: ...
+    def restore_gate(self) -> None: ...
+    def remove_fixtures(self) -> None: ...
+
+
+def crash_module() -> CrashHelper:
+    if __package__:
+        from . import live_crash_guest
+    else:
+        import live_crash_guest
+    return live_crash_guest
+
+
 def main() -> None:
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -325,6 +355,13 @@ def main() -> None:
         'prepare-retry': lambda: retry_module().prepare(),
         'retry-failed': lambda: retry_module().failed(),
         'verify-retry': lambda: retry_module().verify(),
+        'prepare-crash': lambda: crash_module().prepare(),
+        'crash-kill': lambda: crash_module().kill(),
+        'crash-failed': lambda: crash_module().failed(),
+        'crash-allow-recovery': lambda: crash_module().allow_recovery(),
+        'crash-recovered': lambda: crash_module().recovered(),
+        'crash-rearm': lambda: crash_module().rearm(),
+        'crash-reboot-ready': lambda: crash_module().reboot_ready(),
     }
     parser.add_argument('action', choices=actions)
     action = parser.parse_args(namespace=Arguments()).action

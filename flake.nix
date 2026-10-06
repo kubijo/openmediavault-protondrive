@@ -151,6 +151,7 @@
             "debian/*.prerm"
             "debian/*.postrm"
           ];
+          shell.extraOptions = [ "--case-indent" ];
           php = true;
           debian = true;
           # Generic template whitespace is normalized without rewriting Jinja/YAML semantics.

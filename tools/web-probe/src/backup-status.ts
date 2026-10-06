@@ -20,7 +20,7 @@ export async function readBackupStatus(page: Page): Promise<BackupStatus> {
         const part = (name: string) =>
             transfer?.querySelector(`.protondrive-transfer-${name}`)?.textContent?.trim() ?? '';
         return {
-            phase: field('Last reported phase:'),
+            phase: texts.includes('Recovery required') ? 'recovery-required' : field('Last reported phase:'),
             item: field('Current item:'),
             success: field('Last successful backup:'),
             ...(transfer ? { transfer: { phase: part('phase'), file: part('file'), elapsed: part('elapsed') } } : {}),

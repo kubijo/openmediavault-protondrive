@@ -9,6 +9,9 @@ test('status snapshots tolerate cards disappearing and being replaced during ref
         const page = await browser.newPage();
         page.setDefaultTimeout(500);
         assert.deepEqual(await readBackupStatus(page), { phase: '', item: '', success: '' });
+        await page.setContent('<div role="alert"><p><strong>Recovery required</strong></p></div>');
+        assert.equal((await readBackupStatus(page)).phase, 'recovery-required');
+        await page.setContent('');
         await page.evaluate(() => {
             let revision = 0;
             setInterval(() => {

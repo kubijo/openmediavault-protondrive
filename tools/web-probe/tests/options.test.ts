@@ -102,6 +102,9 @@ test('live flow selects one viewport and requires signed-in assertions', () => {
         assert.equal(options.live, true);
         assert.equal(options.recover, false);
         assert.equal(optionsFromArgs([...args, '--recover'])?.recover, true);
+        assert.equal(optionsFromArgs([...args, '--crash-recovery'])?.crashRecovery, true);
+        assert.throws(() => optionsFromArgs(['--crash-recovery']), /requires --live/);
+        assert.throws(() => optionsFromArgs([...args, '--crash-recovery', '--upload-retry']), /Choose either/);
         assert.throws(() => optionsFromArgs(['--password', 'test', '--recover']), /requires --live/);
         assert.equal(options.expectSignedIn, true);
         assert.equal(options.stateDir, state);

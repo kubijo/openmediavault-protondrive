@@ -3,11 +3,13 @@
 import argparse
 import json
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import vm_runtime
-from tool_data import decode, integer
-from vm_control import VMState
+from tool_data import decode, integer, string
+from vm_control import VMState, qmp
 
 SOCKET = '/run/omv-protondrive/control.sock'
 RESPONSE_LIMIT = 4 * 1024 * 1024
@@ -71,6 +73,49 @@ class Arguments(argparse.Namespace):
     set_uuid: str | None = None
 
 
+def crash_reboot(state_dir: Path, guest: vm_runtime.Guest) -> dict[str, bool]:
+    state = VMState(state_dir.resolve())
+    with state.lock():
+        proof = guest.run(
+            'env',
+            'PYTHONPATH=/usr/share/openmediavault-protondrive',
+            'python3',
+            '/usr/local/lib/omv-protondrive-vm/live_ui_guest.py',
+            'crash-reboot-ready',
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        before = string(decode(proof.stdout)['boot_id'])
+        qmp(state.monitor, 'system_reset')
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            try:
+                result = guest.run(
+                    'cat', '/proc/sys/kernel/random/boot_id', capture_output=True, text=True, timeout=10, check=False
+                )
+                if result.returncode == 0 and result.stdout.strip() and result.stdout.strip() != before:
+                    ready = guest.run(
+                        'systemctl',
+                        'show',
+                        '--property=ActiveState',
+                        '--value',
+                        'nginx',
+                        'openmediavault-engined',
+                        'omv-protondrive',
+                        check=False,
+                        text=True,
+                        timeout=10,
+                        capture_output=True,
+                    )
+                    if ready.returncode == 0 and ready.stdout.split() == ['active'] * 3:
+                        return {'rebooted': True}
+            except subprocess.TimeoutExpired:
+                pass
+            time.sleep(1)
+        raise RuntimeError('VM did not return with a new boot ID; crash fixtures remain for recovery')
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', type=Path, default=Path('.tmp/interactive-vm'))
@@ -81,10 +126,20 @@ def main(argv: list[str] | None = None) -> int:
     request = commands.add_parser('rpc', help='Call the Proton service socket and print its JSON result')
     request.add_argument('operation', choices=('status', 'probe', 'prepare'))
     request.add_argument('--set-uuid')
+    commands.add_parser('crash-reboot', help='Abruptly reboot only an armed development crash-recovery fixture')
+    commands.add_parser('flow-lease', help='Hold a host flow lock across guest reboots until standard input closes')
     options = parser.parse_args(argv, namespace=Arguments())
+    if options.action == 'flow-lease':
+        with VMState(options.state_dir.resolve()).lock('live-flow'):
+            print(json.dumps({'locked': True}), flush=True)
+            sys.stdin.read()
+        return 0
     guest = guest_for(options.state_dir)
     if options.action == 'exec':
         return execute(guest, options.command, stdin=options.stdin)
+    if options.action == 'crash-reboot':
+        print(json.dumps(crash_reboot(options.state_dir, guest)))
+        return 0
     print(json.dumps(rpc(guest, options.operation, options.set_uuid), indent=2, sort_keys=True))
     return 0
 

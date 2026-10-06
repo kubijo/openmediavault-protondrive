@@ -1,5 +1,3 @@
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
 import { createInterface as promptInterface } from 'node:readline/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { stripVTControlCharacters } from 'node:util';
@@ -9,10 +7,13 @@ import type { ProbeArtifacts } from './artifacts.ts';
 import { screenshot } from './artifacts.ts';
 import type { BackupStatus } from './backup-status.ts';
 import { readBackupStatus } from './backup-status.ts';
+import type { BrowserErrors } from './browser-errors.ts';
+import { acquireGuestLease } from './guest-lease.ts';
 import { collectGuestOutput } from './guest-output.ts';
-import { requireCondition } from './layout.ts';
+import { checkOverviewLayout, requireCondition } from './layout.ts';
 import type { ProbeOptions } from './options.ts';
 import type { Progress, StageProgress } from './progress.ts';
+import { waitForOverview } from './session.ts';
 
 const execute = $({ quiet: true, detached: true });
 const STEP_UNIT = 'omv-protondrive-ui-step.service';
@@ -27,6 +28,12 @@ export type GuestAction =
     | 'prepare-retry'
     | 'retry-failed'
     | 'verify-retry'
+    | 'prepare-crash'
+    | 'crash-kill'
+    | 'crash-failed'
+    | 'crash-allow-recovery'
+    | 'crash-recovered'
+    | 'crash-rearm'
     | 'cleanup';
 
 export class GuestCommandError extends Error {
@@ -118,7 +125,7 @@ async function guest(
 
 async function overview(page: Page, options: ProbeOptions): Promise<void> {
     await page.goto(`${options.url}/#/services/protondrive/overview`, { waitUntil: 'domcontentloaded' });
-    await page.getByRole('heading', { name: 'Account', exact: true }).waitFor();
+    await waitForOverview(page, options.expectSignedIn);
 }
 
 async function start(page: Page, options: ProbeOptions, artifacts: ProbeArtifacts, name: string): Promise<void> {
@@ -131,7 +138,7 @@ async function start(page: Page, options: ProbeOptions, artifacts: ProbeArtifact
     await screenshot(page, options.output, `${name}-running.png`, artifacts.screenshots);
 }
 
-async function clickOperation(page: Page, label: string, method: string): Promise<void> {
+async function clickOperation(page: Page, label: string, method: string): Promise<unknown> {
     const response = page.waitForResponse(response => {
         const body = response.request().postData();
         if (!body) return false;
@@ -152,9 +159,15 @@ async function clickOperation(page: Page, label: string, method: string): Promis
     const [reply] = await Promise.all([response, page.getByRole('button', { name: label, exact: true }).click()]);
     const body: unknown = await reply.json();
     requireCondition(
-        reply.ok() && body !== null && typeof body === 'object' && 'error' in body && body.error === null,
+        reply.ok() &&
+            body !== null &&
+            typeof body === 'object' &&
+            'error' in body &&
+            body.error === null &&
+            'response' in body,
         `UI ${label} request was rejected`,
     );
+    return body.response;
 }
 
 async function waitCompleted(page: Page, previous: string, progress: StageProgress): Promise<void> {
@@ -164,7 +177,10 @@ async function waitCompleted(page: Page, previous: string, progress: StageProgre
         if (attributes?.phase) {
             progress.update(attributes.phase, attributes.file || undefined, Number(attributes.elapsed));
         } else if (phase) progress.update(`${phase}${detail ? ':' : ''}`, detail || undefined);
-        requireCondition(phase !== 'failed' && phase !== 'recovery-failed', 'UI backup failed before completion');
+        requireCondition(
+            !['failed', 'recovery-failed', 'recovery-required', 'interrupted'].includes(phase),
+            'UI backup failed before completion',
+        );
         if (phase === 'completed' && success && (!previous || !success.includes(previous))) {
             await page.getByText('Not running', { exact: true }).waitFor();
             return;
@@ -180,56 +196,57 @@ export async function runLiveFlow(
     artifacts: ProbeArtifacts,
     progress: Progress,
     signal: AbortSignal,
+    reconnect: () => Promise<void>,
+    prepareReboot: () => Promise<void>,
+    browserErrors: BrowserErrors,
 ): Promise<void> {
     const command = process.env.PROTONDRIVE_VM_COMMAND;
     requireCondition(command, 'Use the Nix web-probe app for the live VM flow');
-    const child = spawn(command, guestArguments(options.stateDir, 'lease'), {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true,
-    });
-    const ready = Promise.withResolvers<void>();
-    const abortLock = () => ready.reject(signal.reason);
-    signal.addEventListener('abort', abortLock, { once: true });
-    let diagnostic = '';
-    let released = false;
-    let lost = false;
-    child.stderr.on('data', (data: Buffer) => {
-        diagnostic = (diagnostic + data.toString()).slice(-1024 * 1024);
-    });
-    const lines = createInterface({ input: child.stdout });
-    lines.on('line', line => {
-        if (line === '{"locked": true}') ready.resolve();
-    });
-    child.once('error', error => ready.reject(error));
-    child.stdin.on('error', error => ready.reject(error));
-    const closed = new Promise<void>(resolve => {
-        child.once('close', () => {
-            lost = true;
-            ready.reject(new GuestCommandError('lease', diagnostic || 'VM flow lock connection closed', undefined));
-            if (!released) void page.close().catch(() => undefined);
-            resolve();
+    const acquire = (leaseSignal: AbortSignal) =>
+        acquireGuestLease(command, guestArguments(options.stateDir, 'lease'), leaseSignal, () => {
+            void page.close().catch(() => undefined);
         });
-    });
-    const timeout = setTimeout(() => ready.reject(new Error('Timed out acquiring the VM flow lock')), 30_000);
+    const hostLease = await progress.stage('Lock host live flow', () =>
+        acquireGuestLease(command, ['--state-dir', options.stateDir, 'flow-lease'], signal, () => {
+            void page.close().catch(() => undefined);
+        }),
+    );
     try {
-        await progress.stage('Lock live UI flow', () => ready.promise);
-        clearTimeout(timeout);
-        signal.throwIfAborted();
-        await runLockedFlow(page, options, artifacts, progress, signal, () => {
-            requireCondition(!lost, 'VM flow lock connection was lost; recovery is required');
-        });
-    } finally {
-        clearTimeout(timeout);
-        signal.removeEventListener('abort', abortLock);
-        released = true;
-        child.stdin.end();
-        const stop = setTimeout(() => child.kill('SIGTERM'), 5000);
-        try {
-            await closed;
-        } finally {
-            clearTimeout(stop);
-            lines.close();
+        let lease = await progress.stage('Lock live UI flow', () => acquire(signal));
+        async function reboot(): Promise<void> {
+            signal.throwIfAborted();
+            await prepareReboot();
+            await lease.release();
+            try {
+                const args = ['--state-dir', options.stateDir, 'crash-reboot'];
+                // Finish the bounded reboot/reconnect even if cancellation arrives,
+                // so cleanup can reach the guest and restore its fixture containers.
+                await execute({ timeout: 240_000 })`${command} ${args}`;
+            } finally {
+                lease = await acquire(new AbortController().signal);
+            }
+            signal.throwIfAborted();
+            await reconnect();
         }
+        try {
+            await runLockedFlow(
+                page,
+                options,
+                artifacts,
+                progress,
+                signal,
+                () => {
+                    hostLease.assertHeld();
+                    lease.assertHeld();
+                },
+                reboot,
+                browserErrors,
+            );
+        } finally {
+            await lease.release();
+        }
+    } finally {
+        await hostLease.release();
     }
 }
 
@@ -264,6 +281,8 @@ async function runLockedFlow(
     progress: Progress,
     signal: AbortSignal,
     assertHeld: () => void,
+    reboot: () => Promise<void>,
+    browserErrors: BrowserErrors,
 ): Promise<void> {
     let begun = false;
     let failure: unknown;
@@ -277,6 +296,12 @@ async function runLockedFlow(
         'prepare-retry': 'Prepare scoped upload interruption',
         'retry-failed': 'Verify failed upload preserves local and remote backups',
         'verify-retry': 'Verify retry ordering and restore interrupted archive',
+        'prepare-crash': 'Prepare real runner crash fixtures',
+        'crash-kill': 'SIGKILL runner and verify retained recovery record',
+        'crash-failed': 'Verify failed boot recovery retains pending archives',
+        'crash-allow-recovery': 'Unblock fixture container startup',
+        'crash-recovered': 'Verify recovery requested through the web UI',
+        'crash-rearm': 'Arm abrupt reboot scenario',
     };
     async function step(action: GuestAction): Promise<Record<string, unknown>> {
         assertHeld();
@@ -300,7 +325,9 @@ async function runLockedFlow(
         begun = true;
         const initial = await step('begin');
         requireCondition(typeof initial.lastsuccess === 'string', 'Missing baseline backup status');
-        if (options.uploadRetry) {
+        if (options.crashRecovery) {
+            await crashRecoveryFlow(page, options, artifacts, progress, step, reboot, signal, browserErrors);
+        } else if (options.uploadRetry) {
             await uploadRetryFlow(page, options, artifacts, progress, step);
         } else {
             await progress.stage('Start backup from web UI', async () => {
@@ -423,10 +450,98 @@ async function uploadRetryFlow(
 }
 
 export function interruptedUploadFinished(status: BackupStatus, previous: string): boolean {
-    requireCondition(status.phase !== 'recovery-failed', 'Container recovery failed during upload interruption');
+    requireCondition(
+        !['recovery-failed', 'recovery-required'].includes(status.phase),
+        'Container recovery failed during upload interruption',
+    );
     requireCondition(
         status.phase !== 'completed' || status.success === previous,
         'Upload completed instead of failing under the network fault',
     );
     return status.phase === 'failed';
+}
+
+async function crashRecoveryFlow(
+    page: Page,
+    options: ProbeOptions,
+    artifacts: ProbeArtifacts,
+    progress: Progress,
+    step: (action: GuestAction) => Promise<Record<string, unknown>>,
+    reboot: () => Promise<void>,
+    signal: AbortSignal,
+    browserErrors: BrowserErrors,
+): Promise<void> {
+    const width = page.viewportSize()?.width;
+    requireCondition(width, 'Crash flow requires a fixed viewport');
+    await overview(page, options);
+    const previous = (await readBackupStatus(page)).success;
+    await progress.stage('Create confirmed baseline from web UI', () =>
+        start(page, options, artifacts, 'crash-baseline'),
+    );
+    await progress.stage('Wait for confirmed baseline', stage => waitCompleted(page, previous, stage));
+    await step('verify');
+    await step('prepare-crash');
+    for (const mode of ['kill', 'reboot'] as const) {
+        if (mode === 'reboot') await step('crash-rearm');
+        await overview(page, options);
+        await progress.stage(`Start ${mode} scenario from web UI`, () =>
+            start(page, options, artifacts, `crash-${mode}`),
+        );
+        await progress.stage('Wait for real runner to stop containers', async () => {
+            const deadline = Date.now() + 180_000;
+            while ((await guest(options, 'held', signal)).held !== true) {
+                requireCondition(Date.now() < deadline, 'Runner did not reach the archive hold');
+                await delay(1000);
+            }
+        });
+        if (mode === 'kill') {
+            await step('crash-kill');
+        } else {
+            await progress.stage('Abruptly reboot VM and reconnect', reboot);
+            artifacts.steps.push({ name: 'crash-reboot', result: { rebooted: true } });
+            await step('crash-failed');
+        }
+        await overview(page, options);
+        await page.getByRole('alert').getByText('Recovery required', { exact: true }).waitFor({ timeout: 30_000 });
+        requireCondition(
+            await page.getByRole('button', { name: 'Run now', exact: true, includeHidden: true }).isDisabled(),
+            'Run now must be disabled while recovery is pending',
+        );
+        await checkOverviewLayout(page, width);
+        await screenshot(page, options.output, `crash-${mode}-failed-recovery.png`, artifacts.screenshots);
+        await progress.stage('Verify failed recovery through the web UI', async () => {
+            const task = await clickOperation(page, 'Recover containers', 'recoverContainers');
+            requireCondition(typeof task === 'string', 'Recovery did not return a background task');
+            await browserErrors.expectTaskFailure(task, 'Container recovery incomplete:');
+            const notification = page.getByText(/Container recovery incomplete:/);
+            await notification.waitFor({ timeout: 90_000 });
+            await screenshot(page, options.output, `crash-${mode}-recovery-error.png`, artifacts.screenshots);
+            await notification.click();
+            await notification.waitFor({ state: 'hidden' });
+            artifacts.steps.push({
+                name: `crash-${mode}-recovery-error`,
+                result: { expected: true, http_status: 500 },
+            });
+            await overview(page, options);
+            await page.getByText('Recovery required', { exact: true }).waitFor();
+        });
+        await step('crash-allow-recovery');
+        await progress.stage('Recover containers from web UI', async () => {
+            await clickOperation(page, 'Recover containers', 'recoverContainers');
+            await page.getByRole('dialog').waitFor();
+            await overview(page, options);
+            await page.getByText('Not running', { exact: true }).waitFor({ timeout: 90_000 });
+            requireCondition(
+                await page
+                    .getByRole('button', { name: 'Recover containers', exact: true, includeHidden: true })
+                    .isDisabled(),
+                'Recovery action must be disabled after successful recovery',
+            );
+        });
+        await step('crash-recovered');
+        await overview(page, options);
+        await page.getByText('Not running', { exact: true }).waitFor({ timeout: 30_000 });
+        await checkOverviewLayout(page, width);
+        await screenshot(page, options.output, `crash-${mode}-recovered.png`, artifacts.screenshots);
+    }
 }

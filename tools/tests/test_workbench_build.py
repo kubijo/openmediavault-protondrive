@@ -79,6 +79,24 @@ class WorkbenchBuildTests(unittest.TestCase):
         self.assertIn('No successful backup yet', output)
         self.assertIn('<pre>one\n&lt;two&gt;</pre>', output)
 
+    def test_pending_recovery_warning_replaces_stale_activity(self):
+        template = self.environment.from_string(self.cards['backupstatus'])
+        for pending in (True, False):
+            output = template.render(
+                authstate='unavailable',
+                running=False,
+                recoverypending=pending,
+                phase='interrupted',
+                lastsuccess='previous success',
+                error='',
+                details='',
+            )
+            self.assertEqual('role="alert"' in output, pending)
+            self.assertEqual('Recovery required' in output, pending)
+            self.assertEqual('Last reported phase:' in output, not pending)
+            self.assertIn('previous success', output)
+            self.assertEqual('<strong>Not running</strong>' in output, not pending)
+
     def test_current_item_is_escaped_and_only_shown_during_relevant_phases(self):
         template = self.environment.from_string(self.cards['backupstatus'])
         for running, phase, visible in (

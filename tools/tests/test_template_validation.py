@@ -21,7 +21,7 @@ class TemplateTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        for directory in ('src/salt', 'src/omv/datamodels', 'src/omv/workbench', 'src/web/templates'):
+        for directory in ('src/salt', 'src/monit', 'src/omv/datamodels', 'src/omv/workbench', 'src/web/templates'):
             shutil.copytree(ROOT / directory, self.root / directory)
         (self.root / 'tools').mkdir()
         for name in ('check_templates.py', 'console.py', 'build_workbench.py', 'tool_data.py'):
