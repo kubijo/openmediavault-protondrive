@@ -11,6 +11,7 @@ let
   probeSrc = src + "/tools/web-probe";
   playwrightVersion = manifest.devDependencies."playwright-core";
   typescriptVersion = manifest.devDependencies.typescript;
+  fonts = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
   pnpmVersion = elemAt (lib.splitString "@" manifest.packageManager) 1;
   pnpmDeps = pkgs.fetchPnpmDeps {
     pname = "omv-protondrive-web-probe";
@@ -31,6 +32,7 @@ let
     version = "1";
     src = probeSrc;
     inherit pnpmDeps;
+    FONTCONFIG_FILE = fonts;
     nativeBuildInputs = [
       nodejs
       buildPnpm
@@ -58,6 +60,7 @@ let
     ];
     text = ''
       export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+      export FONTCONFIG_FILE=${fonts}
       export PROTONDRIVE_VM_COMMAND=${vmCommand}
       exec node ${checked}/lib/web-probe/src/main.ts "$@"
     '';

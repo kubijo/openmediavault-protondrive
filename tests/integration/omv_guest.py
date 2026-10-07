@@ -52,7 +52,10 @@ def main(package: Path):
         '-s',
         '/src/tests/unit',
         '-v',
-        env={**os.environ, 'PYTHONPATH': '/usr/share/openmediavault-protondrive:/src'},
+        env={
+            **os.environ,
+            'PYTHONPATH': '/usr/share/openmediavault-protondrive:/src:/usr/local/lib/omv-protondrive-vm',
+        },
     )
     settings = rpc('get')
     assert not settings['enable']

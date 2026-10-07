@@ -31,6 +31,8 @@ JOB_UNIT = 'omv-protondrive-harness.service'
 class Options:
     image: Path
     package: Path
+    guest_bundle: Path | None = None
+    """Built guest helpers and locked portable test dependencies."""
     reports: Path = Path('.tmp/vm-tests')
     """Directory for serial and test logs, retained after guest cleanup."""
     cache_dir: Path = Path('.tmp/vm-cache')
@@ -351,14 +353,17 @@ def provision(guest: Guest, options: Options, dependencies: str, output: Process
 
 
 def test_guest(guest: Guest, options: Options, output: ProcessOutput) -> None:
+    if options.guest_bundle is None:
+        raise ValueError('Use the Nix test-vm app to supply the built guest tools archive')
     bundle = guest.directory / 'source.tar'
     with output.stage('Transfer package and fixtures'):
         with tarfile.open(bundle, 'w') as archive:
             for name in ('src', 'tests'):
                 archive.add(SOURCE / name, arcname=name)
-        guest.copy(bundle, options.package)
+        guest.copy(bundle, options.package, options.guest_bundle)
         guest.run('mkdir', '-p', '/src')
         guest.run('tar', '-xf', '/root/source.tar', '-C', '/src')
+        guest.run('tar', '-xf', f'/root/{options.guest_bundle.name}', '-C', '/usr/local/lib')
     with output.stage('Install current plugin and run guest tests'):
         guest.python(
             output,

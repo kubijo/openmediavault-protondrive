@@ -14,7 +14,11 @@ export type ProbeOptions = {
     live: boolean;
     ownedUi: boolean;
     ownedUiChanges: boolean;
+    ownedUiBackup: boolean;
     ownedUiRestore: boolean;
+    ownedUiResilience: boolean;
+    ownedUiInterrupt: boolean;
+    ownedUiForeign: boolean;
     uploadRetry: boolean;
     crashRecovery: boolean;
     recover: boolean;
@@ -82,7 +86,14 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         )
         .option('--expect-signed-in', 'Assert the account and an email are shown as signed in')
         .option('--owned-ui', 'Check the owned application and its authenticated RPC boundary')
+        .option('--owned-ui-backup', 'Create a fresh archive before restore in a disposable regression VM')
         .option('--owned-ui-restore', 'Inspect and extract a real archive through the owned UI in the development VM')
+        .option(
+            '--owned-ui-resilience',
+            'Test extraction cancellation and controller restart (requires --owned-ui-restore)',
+        )
+        .option('--owned-ui-interrupt', 'Leave an owned extraction pending for a separate --recover invocation')
+        .option('--owned-ui-foreign', 'Verify read-only browsing of an existing foreign instance')
         .option(
             '--owned-ui-changes',
             'Exercise and restore owned UI settings and a disabled test set in the development VM',
@@ -106,6 +117,13 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
     const values = command.opts();
     if (values.ownedUiChanges && !values.ownedUi) throw new Error('--owned-ui-changes requires --owned-ui');
     if (values.ownedUiRestore && !values.ownedUi) throw new Error('--owned-ui-restore requires --owned-ui');
+    if (values.ownedUiResilience || values.ownedUiInterrupt || values.ownedUiForeign) {
+        if (!values.ownedUiRestore || values.recover)
+            throw new Error('Restore scenario flags require --owned-ui-restore and cannot be combined with --recover');
+    }
+    if (values.ownedUiBackup && (!values.ownedUiRestore || values.recover)) {
+        throw new Error('--owned-ui-backup requires --owned-ui-restore and cannot be combined with --recover');
+    }
     if (values.ownedUi && (values.live || values.changeHour !== undefined || values.changeRoot !== undefined)) {
         throw new Error('--owned-ui cannot be combined with legacy UI mutations');
     }
@@ -136,6 +154,9 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         if (values.url.replace(/\/+$/, '') !== `http://127.0.0.1:${metadata.http_port}`) {
             throw new Error("--live URL must match the selected VM's localhost HTTP port");
         }
+        if (values.ownedUiBackup && (!('regression' in metadata) || metadata.regression !== true)) {
+            throw new Error('--owned-ui-backup requires a disposable regression VM');
+        }
     }
     if (values.changeHour !== undefined && widths.length !== 1) {
         throw new Error('--change-hour requires exactly one --width');
@@ -156,7 +177,11 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         live: values.live ?? false,
         ownedUi: values.ownedUi ?? false,
         ownedUiChanges: values.ownedUiChanges ?? false,
+        ownedUiBackup: values.ownedUiBackup ?? false,
         ownedUiRestore: values.ownedUiRestore ?? false,
+        ownedUiResilience: values.ownedUiResilience ?? false,
+        ownedUiInterrupt: values.ownedUiInterrupt ?? false,
+        ownedUiForeign: values.ownedUiForeign ?? false,
         uploadRetry: values.uploadRetry ?? false,
         crashRecovery: values.crashRecovery ?? false,
         recover: values.recover ?? false,

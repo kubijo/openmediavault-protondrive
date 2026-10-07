@@ -13,7 +13,7 @@ import type { ProbeOptions } from './options.ts';
 import { optionsFromArgs } from './options.ts';
 import { checkOwnedUi } from './owned-ui.ts';
 import { Progress } from './progress.ts';
-import { prepareBrowserReboot } from './session.ts';
+import { prepareBrowserReboot, submitLogin } from './session.ts';
 
 export type { ProbeOptions } from './options.ts';
 
@@ -31,9 +31,7 @@ async function login(page: Page, options: ProbeOptions): Promise<void> {
     await page.locator('input[type="password"], .protondrive-status-heading').first().waitFor({ timeout: 30_000 });
     const password = page.locator('input[type="password"]');
     if (await password.count()) {
-        await page.locator('input[type="text"]').first().fill(options.username);
-        await password.first().fill(options.password);
-        await page.getByRole('button', { name: 'Log in' }).click();
+        await submitLogin(page, options);
     }
     await page.getByRole('heading', { name: 'Account', exact: true }).waitFor({ timeout: 30_000 });
     requireCondition(page.url().includes('services/protondrive/overview'), `Overview did not open: ${page.url()}`);
@@ -109,7 +107,7 @@ async function runViewport(
         if (options.ownedUi) {
             const remoteFolder = await progress.stage(
                 'Check owned UI',
-                () => checkOwnedUi(page, options, width, screenshots, signal),
+                () => checkOwnedUi(page, options, width, screenshots, signal, browserErrors),
                 { viewport: width },
             );
             const errors = browserErrors.messages();

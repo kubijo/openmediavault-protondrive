@@ -58,6 +58,23 @@ export class BrowserErrors {
         this.#expected.add(response);
     }
 
+    async expectRpcRejection(response: Response, code: string, message: string): Promise<void> {
+        const body: unknown = await response.json();
+        if (
+            !this.#responses.includes(response) ||
+            response.status() !== 400 ||
+            body === null ||
+            typeof body !== 'object' ||
+            !('code' in body) ||
+            body.code !== code ||
+            !('message' in body) ||
+            body.message !== message
+        ) {
+            throw new Error('RPC was rejected with an unexpected error');
+        }
+        this.#expected.add(response);
+    }
+
     messages(): string[] {
         const consoleErrors = this.#console.filter(entry => {
             const match = /^Failed to load resource: the server responded with a status of (\d{3})\b/.exec(entry.text);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chromium } from 'playwright-core';
-import { prepareBrowserReboot, waitForOverview } from '../../src/session.ts';
+import { prepareBrowserReboot, submitLogin, waitForOverview } from '../../src/session.ts';
 
 test('overview readiness waits for the account response, not the loading placeholder', async () => {
     const browser = await chromium.launch({ headless: true });
@@ -47,6 +47,63 @@ test('reboot preparation unloads the app and discards its invalidated browser lo
         assert.deepEqual(await context.cookies(), []);
         await page.goto('http://vm.test/');
         assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
+    } finally {
+        await browser.close();
+    }
+});
+
+test('login repairs an autofocus redirect before submitting credentials', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const page = await browser.newPage();
+        await page.route('http://vm.test/**', route =>
+            route.fulfill({
+                contentType: 'text/html',
+                body: '<input type="text"><input type="password"><button>Log in</button>',
+            }),
+        );
+        await page.goto('http://vm.test/');
+        await page.evaluate(() => {
+            const username = document.querySelector<HTMLInputElement>('input[type="text"]');
+            const password = document.querySelector<HTMLInputElement>('input[type="password"]');
+            const button = document.querySelector('button');
+            if (!username || !password || !button) throw new Error('Missing login fixture');
+            password.addEventListener('focus', () => username.focus(), { once: true });
+            button.addEventListener('click', () => {
+                button.dataset.login = `${username.value}:${password.value}`;
+            });
+        });
+        await submitLogin(page, { username: 'admin', password: 'test-password' });
+        assert.equal(await page.getByRole('button').getAttribute('data-login'), 'admin:test-password');
+    } finally {
+        await browser.close();
+    }
+});
+
+test('login never submits fields that keep losing their values', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const page = await browser.newPage();
+        await page.route('http://vm.test/**', route =>
+            route.fulfill({
+                contentType: 'text/html',
+                body: '<input type="text"><input type="password"><button>Log in</button>',
+            }),
+        );
+        await page.goto('http://vm.test/');
+        await page.evaluate(() => {
+            const password = document.querySelector<HTMLInputElement>('input[type="password"]');
+            const button = document.querySelector('button');
+            if (!password || !button) throw new Error('Missing login fixture');
+            password.addEventListener('input', () => {
+                password.value = '';
+            });
+            button.addEventListener('click', () => {
+                button.dataset.submitted = 'true';
+            });
+        });
+        await assert.rejects(submitLogin(page, { username: 'admin', password: 'test-password' }), /did not retain/);
+        assert.equal(await page.getByRole('button').getAttribute('data-submitted'), null);
     } finally {
         await browser.close();
     }

@@ -2,7 +2,7 @@
   description = "OpenMediaVault plugin for backups to Proton Drive";
 
   inputs = {
-    nix-tools.url = "github:kubijo/nix-tools/v0.7.2";
+    nix-tools.url = "github:kubijo/nix-tools/v0.9.0";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -54,7 +54,7 @@
               (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
             ]
           );
-      qaPython = pythonSet.mkVirtualEnv "protondrive-tooling" workspace.deps.default;
+      qaPython = pythonSet.mkVirtualEnv "protondrive-tooling" workspace.deps.all;
       maintenance = import ./infra/nix/maintenance.nix {
         inherit pkgs nix-tools;
         python = qaPython;
@@ -127,6 +127,7 @@
         text = ''
           export PYTHONPATH="${self}/tools"
           exec python ${self}/tests/integration/debian_smoke.py \
+            --guest-bundle ${vmGuestTools}/omv-protondrive-vm-tools.tar \
             --package ${deb}/openmediavault-protondrive_7.0.0_amd64.deb "$@"
         '';
       };
@@ -248,6 +249,25 @@
               "omv-protondrive"
             ];
           };
+          deptry.projects = {
+            tooling.sourceRoots = [
+              "src"
+              "tools"
+              "tools/tests"
+              "tests/unit"
+              "tests/integration"
+            ];
+            api.root = "src/api";
+          };
+          basedpyright.projects.python = {
+            configFile = "pyproject.toml";
+            python = qaPython;
+            reporter = "rich";
+            outdated = {
+              package = pkgs.basedpyright;
+              repo = "detachhead/basedpyright";
+            };
+          };
           shell.includes = shellFiles;
           php.extraOptions = [ "--semantics" ];
           debian = true;
@@ -286,21 +306,6 @@
             exclude = [ "LICENSE" ];
           };
           extraProjectCheckers = {
-            python-types = {
-              command = pkgs.lib.getExe pkgs.basedpyright;
-              options = [
-                "--pythonpath"
-                "${qaPython}/bin/python"
-                "src"
-                "src/bin/omv-protondrive"
-                "tools"
-                "tests"
-              ];
-              outdated = {
-                package = pkgs.basedpyright;
-                repo = "detachhead/basedpyright";
-              };
-            };
             vm-branding = {
               command = pkgs.lib.getExe qa.checkBranding;
               outdated.skip = "Versioned with this repository";
@@ -415,6 +420,21 @@
           program = pkgs.lib.getExe testDebian;
         };
         test-vm = vmApp "test";
+        test-regression = {
+          type = "app";
+          program = pkgs.lib.getExe (
+            import ./infra/nix/test-regression.nix {
+              inherit pkgs;
+              python = qaPython;
+              src = self;
+              vmUp = (vmApp "up").program;
+              vmControl = (vmApp "control").program;
+              vmCommand = (vmApp "command").program;
+              webProbe = pkgs.lib.getExe webProbe.probe;
+              testVm = (vmApp "test").program;
+            }
+          );
+        };
         vm = vmApp "control";
         vm-command = vmApp "command";
         vm-up = vmApp "up";

@@ -14,7 +14,7 @@ from typing import cast
 
 import protovalidate
 
-from protondrive.common import STATE, locked, request
+from protondrive.common import STATE, BackupError, locked, request
 from protondrive.containers import inventory
 from protondrive.operation import Cancelled, OperationControl
 
@@ -164,6 +164,16 @@ class Controller:
                 case _:
                     raise ValueError('Unknown controller operation')
 
+    def respond(self, request: wire.BrokerRequest) -> wire.BrokerResponse:
+        try:
+            return self.dispatch(request)
+        except (ValueError, protovalidate.ValidationError) as exc:
+            return wire.BrokerResponse(error=wire.BrokerError(code='invalid_argument', message=str(exc)))
+        except LookupError:
+            return wire.BrokerResponse(error=wire.BrokerError(code='not_found', message='Job not found'))
+        except BackupError as exc:
+            return wire.BrokerResponse(error=wire.BrokerError(code='failed_precondition', message=str(exc)))
+
     def close(self) -> None:
         self.jobs.shutdown(wait=True)
         self.store.close()
@@ -191,11 +201,7 @@ def serve(path: Path = SOCKET) -> None:
                 if uid not in (0, account.pw_uid):
                     return
                 try:
-                    response = controller.dispatch(wire.BrokerRequest.FromString(read_frame(connection)))
-                except (ValueError, protovalidate.ValidationError) as exc:
-                    response = wire.BrokerResponse(error=wire.BrokerError(code='invalid_argument', message=str(exc)))
-                except LookupError:
-                    response = wire.BrokerResponse(error=wire.BrokerError(code='not_found', message='Job not found'))
+                    response = controller.respond(wire.BrokerRequest.FromString(read_frame(connection)))
                 except Exception:
                     logger.exception('Controller operation failed')
                     response = wire.BrokerResponse(

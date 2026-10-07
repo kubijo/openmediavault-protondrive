@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -41,6 +42,36 @@ def run_service(path: Path) -> None:
 
 
 class DaemonTests(unittest.TestCase):
+    def test_browsing_waits_for_an_inflight_operation(self) -> None:
+        service = object.__new__(daemon.Service)
+        service.config, _ = configuration()
+        listing = Mock(return_value=[])
+        service.cli = Mock(list=listing)
+        service.operations = threading.Lock()
+        with ThreadPoolExecutor(max_workers=1) as workers:
+            service.operations.acquire()
+            try:
+                pending = workers.submit(service.dispatch, {'operation': 'browse'})
+                with self.assertRaises(TimeoutError):
+                    pending.result(timeout=0.05)
+                listing.assert_not_called()
+            finally:
+                service.operations.release()
+            self.assertEqual(pending.result(timeout=2), [])
+        listing.assert_called_once_with(service.config['remotepath'])
+
+    def test_mutations_still_refuse_busy_service_and_cancellation_remains_available(self) -> None:
+        service = object.__new__(daemon.Service)
+        service.operations = threading.Lock()
+        cancel = Mock()
+        service.cli = Mock(cancel_transfer=cancel)
+        with ThreadPoolExecutor(max_workers=1) as workers, service.operations:
+            pending = workers.submit(service.dispatch, {'operation': 'upload'})
+            with self.assertRaisesRegex(BackupError, 'busy'):
+                pending.result(timeout=1)
+            self.assertTrue(service.dispatch({'operation': 'cancel-transfer'}))
+        cancel.assert_called_once_with()
+
     def test_foreign_browsing_never_claims_or_creates_storage(self) -> None:
         config, item = configuration()
         service = object.__new__(daemon.Service)

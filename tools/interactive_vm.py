@@ -26,6 +26,7 @@ from process_output import ProcessOutput
 from process_signals import TerminationRequested, termination_signals
 from tool_data import decode, integer, string
 from vm_control import VMState
+from vm_layers import resolve_installed_base
 
 GUEST_TOOLS = '/usr/local/lib/omv-protondrive-vm'
 
@@ -40,6 +41,10 @@ class Options:
     package: Path | None = None
     guest_bundle: Path | None = None
     """Built VM-only tools archive, including just and the live-test helpers."""
+    regression: bool = False
+    """Use a cached installation with a fake Proton backend."""
+    refresh_base: bool = False
+    """Refresh both cache layers when creating a disk."""
     ssh_port: int | None = None
     """Local SSH port; initially 2222, then the saved port."""
     http_port: int | None = None
@@ -64,6 +69,7 @@ def runtime_options(options: Options, state: VMState) -> vm_runtime.Options:
         package=options.package.resolve(strict=True),
         reports=state.root / 'logs',
         cache_dir=options.cache_dir,
+        refresh_base=options.refresh_base,
         no_color=options.no_color,
         in_clanker=options.in_clanker,
     )
@@ -86,6 +92,10 @@ def create(options: Options, state: VMState, output: ProcessOutput) -> None:
     if not dependencies:
         raise RuntimeError('Plugin package has no dependency metadata')
     base = vm_runtime.resolve_base(runtime, dependencies, output)
+    if options.regression:
+        if options.guest_bundle is None:
+            raise ValueError('Regression initialization requires the built guest tools')
+        base = resolve_installed_base(base, runtime, options.guest_bundle, output)
     with (
         output.stage('Create persistent interactive disk'),
         tempfile.TemporaryDirectory(prefix='.creating-', dir=state.root) as temporary,
@@ -114,6 +124,7 @@ def create(options: Options, state: VMState, output: ProcessOutput) -> None:
             'ssh_port': options.ssh_port or 2222,
             'http_port': options.http_port or 8080,
             'remote_folder': remote,
+            'regression': options.regression,
         }
         (directory / 'instance.json').write_text(json.dumps(metadata, indent=2) + '\n')
         directory.rename(state.instance)
@@ -183,8 +194,7 @@ def setup_shell(options: Options, state: VMState) -> None:
             raise RuntimeError('The guest did not create a VM tools directory')
         guest.run('tar', '-xf', f'/root/{bundle.name}', '-C', directory, '--strip-components=1')
         guest.run('chmod', '0755', directory)
-        # Older VMs used a real directory at this path. Move it aside once;
-        # subsequent upgrades replace the symlink atomically.
+        # Migrate older directories before atomically switching the symlink.
         if (
             guest.run('test', '-d', GUEST_TOOLS, check=False).returncode == 0
             and guest.run('test', '-L', GUEST_TOOLS, check=False).returncode != 0
@@ -221,14 +231,26 @@ def install(options: Options, state: VMState, output: ProcessOutput) -> None:
         guest.ensure_idle()
         setup_shell(options, state)
         with output.stage('Install plugin in interactive VM'):
-            guest.copy(package)
+            if metadata['initialized'] or not metadata.get('regression'):
+                guest.copy(package)
             arguments = [f'/root/{package.name}']
             if not metadata['initialized']:
                 guest.copy(state.instance / 'interactive-init.json')
                 arguments.append('/root/interactive-init.json')
-            guest.python(
-                output, f'{GUEST_TOOLS}/interactive_guest.py', state.root / 'logs/install.log', 1800, *arguments
-            )
+            if not metadata['initialized'] and metadata.get('regression'):
+                guest.python(
+                    output,
+                    f'{GUEST_TOOLS}/regression_guest.py',
+                    state.root / 'logs/install.log',
+                    1800,
+                    'initialize',
+                    '--configuration',
+                    '/root/interactive-init.json',
+                )
+            else:
+                guest.python(
+                    output, f'{GUEST_TOOLS}/interactive_guest.py', state.root / 'logs/install.log', 1800, *arguments
+                )
             settings = decode(
                 guest.run(
                     'omv-confdbadm', 'read', 'conf.service.protondrive', capture_output=True, text=True, timeout=15
@@ -290,6 +312,8 @@ def up(options: Options, state: VMState, output: ProcessOutput) -> None:
             is_running=lambda: state.running() is not None,
         )
         guest.run('touch', '/var/lib/protondrive-interactive-vm')
+        if metadata.get('regression'):
+            guest.run('touch', '/run/protondrive-disposable-test')
         if not metadata['initialized']:
             install(options, state, output)
 

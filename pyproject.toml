@@ -7,11 +7,15 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "tyro>=1.0",
+    "packaging>=26",
+]
+
+[dependency-groups]
+dev = [
     "protondrive-api",
     "pytest>=9",
     "pytest-asyncio>=1",
     "httpx>=0.28",
-    "packaging>=26",
 ]
 
 [tool.uv]
@@ -30,6 +34,7 @@ target-version = "py311" # Guest code must remain valid on Debian's Python 3.11.
 quote-style = "single"
 
 [tool.basedpyright]
+include = ["src", "src/bin/omv-protondrive", "tools", "tests"]
 extraPaths = ["src", "src/api", "tools", "tools/tests", "tests/unit", "tests/integration"]
 exclude = ["src/api/protondrive_api/v1", "src/api/buf", "**/.venv", "**/node_modules", "**/__pycache__", ".tmp"]
 typeCheckingMode = "strict"
@@ -40,7 +45,7 @@ pythonVersion = "3.11"
 pythonPlatform = "Linux"
 
 [tool.deptry]
-extend_exclude = [".tmp", "result"]
+extend_exclude = [".tmp", "result", "^src/api(/|$)"] # API imports use their own dependency manifest.
 
 [tool.deptry.package_module_name_map]
 jinja2 = "jinja2"

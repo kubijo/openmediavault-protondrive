@@ -68,6 +68,7 @@ def main() -> None:
             'run',
             'run-now',
             'recover',
+            'repair-cli-lock',
             'status',
             'auth-status',
             'start-auth',

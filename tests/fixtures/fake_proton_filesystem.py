@@ -14,6 +14,7 @@ def node(path: Path) -> dict[str, object]:
         'uid': str(path.stat().st_ino),
         'name': {'ok': True, 'value': path.name},
         'type': 'folder' if path.is_dir() else 'file',
+        'ownedBy': {'email': 'regression@example.invalid'},
         'activeRevision': {'ok': True, 'value': {'claimedSize': path.stat().st_size}},
     }
 

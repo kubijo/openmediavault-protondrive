@@ -27,13 +27,35 @@ in
   checkerKinds.php-syntax = "syntax";
   checkerKinds.css = "semantic";
   projectChecks = {
-    "lint:python-types" = {
+    "lint:basedpyright-python" = {
       includes = [
         "*.py"
         "src/bin/omv-protondrive"
       ];
       kind = "semantic";
       description = "Strict basedpyright checks Python source and tests, including executable fixtures";
+    };
+    "lint:deptry-tooling" = {
+      includes = [
+        "src/**/*.py"
+        "tools/**/*.py"
+        "pyproject.toml"
+      ];
+      exclude = [
+        "src/api/**"
+        "**/tests/**"
+      ];
+      kind = "semantic";
+      description = "Tooling dependency declarations and imports";
+    };
+    "lint:deptry-api" = {
+      includes = [
+        "src/api/**/*.py"
+        "src/api/pyproject.toml"
+      ];
+      exclude = [ "src/api/tests/**" ];
+      kind = "semantic";
+      description = "API dependency declarations and imports, including generated bindings";
     };
     "lint:vm-branding" = {
       includes = [
@@ -191,6 +213,7 @@ in
       includes = [
         "tests/fixtures/recovery.service.conf"
         "tests/integration/ui-cancel.conf"
+        "tests/integration/owned-restore.conf"
       ];
       stages = [ "lint" ];
       reason = "Systemd loads this override in guest recovery tests; no standalone host unit validation";

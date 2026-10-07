@@ -88,9 +88,12 @@ class Service:
             return self.cli.cancel_auth()
         if operation == 'logout':
             return self.cli.logout()
-        if not self.operations.acquire(blocking=False):
+        # Navigation overlaps reads; wait briefly within the API's 25-second deadline.
+        if not self.operations.acquire(timeout=5 if operation == 'browse' else 0):
             raise BackupError('Proton service is busy')
         try:
+            if operation == 'repair-cli-lock':
+                return self.cli.repair_lock()
             if operation == 'probe':
                 return self.cli.probe()
             if operation == 'download-archive':

@@ -4,20 +4,26 @@ import json
 import os
 import shutil
 import stat
+import subprocess
+import tarfile
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
 import tyro
 
 from cli_options import parse_options
-from protondrive.common import STATE, atomic_json, locked
+from protondrive.common import STATE, BackupError, atomic_json, locked, request
 from protondrive.config import identifier, load
-from protondrive.json_data import decode, object_value
+from protondrive.json_data import decode, object_value, string
+from protondrive.records import listing
 
 if __package__:
+    from . import owned_restore_faults as faults
     from .live_ui_guest import guard
 else:
+    import owned_restore_faults as faults
     from live_ui_guest import guard
 
 ROOT = Path('/var/lib/protondrive-owned-ui-restore')
@@ -48,7 +54,7 @@ def prepare(token: str) -> dict[str, str]:
     return {'destination': str(directory / 'files')}
 
 
-def verify(token: str) -> dict[str, bool]:
+def verify(token: str, inspection_id: str | None = None) -> dict[str, bool]:
     directory = owned(token)
     restored = directory / 'files' / SOURCE.relative_to('/')
     for path in (restored, *restored.parents):
@@ -61,26 +67,85 @@ def verify(token: str) -> dict[str, bool]:
         raise RuntimeError('Restored fixture content differs from the source')
     if (directory / 'files/data/interactive-fixtures/appData').exists():
         raise RuntimeError('Restoration included an unselected set')
-    return {'verified': True}
+    if inspection_id is not None:
+        archive = STATE / 'restore-cache' / identifier(inspection_id) / 'archive.tar'
+        with tarfile.open(archive) as contents:
+            member = contents.getmember(str(SOURCE.relative_to('/')))
+            info = restored.stat()
+            mtime = int(Decimal(str(member.pax_headers.get('mtime', member.mtime))) * 1_000_000_000)
+            if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode), info.st_mtime_ns) != (
+                member.uid,
+                member.gid,
+                member.mode,
+                mtime,
+            ):
+                raise RuntimeError('Restored ownership, permissions or modification time differ from the archive')
+            for name, value in member.pax_headers.items():
+                if name.startswith('SCHILY.xattr.') and os.getxattr(
+                    restored, name.removeprefix('SCHILY.xattr.')
+                ) != value.encode('utf-8', 'surrogateescape'):
+                    raise RuntimeError('Restored extended attribute differs from the archive')
+            if 'SCHILY.acl.access' in member.pax_headers:
+                actual = subprocess.run(
+                    ['getfacl', '-cnE', str(restored)], check=True, capture_output=True, text=True, timeout=10
+                ).stdout
+                expected = member.pax_headers['SCHILY.acl.access'].replace('\n', ',').split(',')
+                if {line.strip() for line in actual.splitlines() if line.strip()} != {
+                    line.strip() for line in expected if line.strip()
+                }:
+                    raise RuntimeError('Restored POSIX ACL differs from the archive')
+    return {'verified': True, 'metadata': inspection_id is not None}
 
 
 def cleanup(token: str) -> dict[str, bool]:
+    directory = ROOT / identifier(token)
+    if (ROOT / 'active').exists() or (ROOT / 'active').is_symlink():
+        faults.disarm(owned(token))
     with locked(STATE / 'run.lock'):
-        directory = ROOT / identifier(token)
         if not directory.exists() and not directory.is_symlink():
             return {'cleaned': True}
         shutil.rmtree(owned(token))
     return {'cleaned': True}
 
 
+def foreign(token: str) -> dict[str, str]:
+    directory = owned(token)
+    config = load()
+    for entry in request('browse', timeout=25):
+        if entry['type'] != 'folder' or entry['name'] == config['instanceuuid']:
+            continue
+        try:
+            instance = identifier(entry['name'])
+        except BackupError:
+            continue
+        entries = request('browse', timeout=25, instanceuuid=instance)
+        atomic_json(directory / 'foreign.json', {'instance': instance, 'entries': entries})
+        return {'instance': instance}
+    raise RuntimeError('No foreign instance exists under the development root; no remote fixture was created')
+
+
+def verify_foreign(token: str) -> dict[str, bool]:
+    record = object_value(decode((owned(token) / 'foreign.json').read_text()))
+    entries = request('browse', timeout=25, instanceuuid=identifier(string(record['instance'])))
+    if sorted(entries, key=lambda item: item['name']) != sorted(
+        listing(record['entries']), key=lambda item: item['name']
+    ):
+        raise RuntimeError('Foreign instance listing changed during read-only browsing')
+    return {'unchanged': True}
+
+
 @dataclass
 class Arguments:
     """Own and verify only the selected-file restore probe's local VM fixtures."""
 
-    action: tyro.conf.Positional[Literal['prepare', 'verify', 'cleanup']]
+    action: tyro.conf.Positional[
+        Literal['prepare', 'verify', 'cleanup', 'arm', 'held', 'crash', 'disarm', 'absent', 'foreign', 'verify-foreign']
+    ]
     """Fixture operation to perform."""
     token: tyro.conf.Positional[str]
     """UUID identifying this probe's owned fixtures."""
+    inspection_id: str | None = None
+    """Verified archive whose metadata must match the extracted file."""
 
 
 def main() -> None:
@@ -90,9 +155,23 @@ def main() -> None:
         case 'prepare':
             print(json.dumps(prepare(args.token)))
         case 'verify':
-            print(json.dumps(verify(args.token)))
+            print(json.dumps(verify(args.token, args.inspection_id) if args.inspection_id else verify(args.token)))
         case 'cleanup':
             print(json.dumps(cleanup(args.token)))
+        case 'arm':
+            print(json.dumps(faults.arm(owned(args.token))))
+        case 'held':
+            print(json.dumps(faults.held(owned(args.token))))
+        case 'crash':
+            print(json.dumps(faults.crash(owned(args.token))))
+        case 'disarm':
+            print(json.dumps(faults.disarm(owned(args.token))))
+        case 'absent':
+            print(json.dumps(faults.verify_absent(owned(args.token))))
+        case 'foreign':
+            print(json.dumps(foreign(args.token)))
+        case 'verify-foreign':
+            print(json.dumps(verify_foreign(args.token)))
 
 
 if __name__ == '__main__':

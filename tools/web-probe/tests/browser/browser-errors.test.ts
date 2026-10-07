@@ -67,3 +67,38 @@ test('task failure expectation can wait for a future response without accepting 
         await browser.close();
     }
 });
+
+test('an expected RPC rejection accepts only the captured response and exact error', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const page = await browser.newPage();
+        await page.route('http://vm.test/**', route => route.fulfill({ contentType: 'text/html', body: '<p>VM</p>' }));
+        await page.route('http://vm.test/rpc.php', route =>
+            route.fulfill({
+                status: 400,
+                contentType: 'application/json',
+                body: JSON.stringify({ code: 'invalid_argument', message: 'Extraction destination already exists' }),
+            }),
+        );
+        const errors = new BrowserErrors(page);
+        await page.goto('http://vm.test/');
+        const waiting = page.waitForResponse('http://vm.test/rpc.php');
+        await task(page, 'collision');
+        const rejected = await waiting;
+        await assert.rejects(
+            errors.expectRpcRejection(rejected, 'internal', 'Extraction destination already exists'),
+            /unexpected error/,
+        );
+        await assert.rejects(
+            errors.expectRpcRejection(rejected, 'invalid_argument', 'different error'),
+            /unexpected error/,
+        );
+        assert.equal(errors.messages().filter(message => message.startsWith('HTTP 400')).length, 1);
+        await errors.expectRpcRejection(rejected, 'invalid_argument', 'Extraction destination already exists');
+        assert.deepEqual(errors.messages(), []);
+        await task(page, 'unexpected second request');
+        assert.equal(errors.messages().filter(message => message.startsWith('HTTP 400')).length, 1);
+    } finally {
+        await browser.close();
+    }
+});

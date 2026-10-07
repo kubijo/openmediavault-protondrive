@@ -125,7 +125,7 @@ def main():
         '-s',
         '/src/tests/unit',
         '-v',
-        env={**os.environ, 'PYTHONPATH': '/src:/src/src:/src/tests/unit'},
+        env={**os.environ, 'PYTHONPATH': '/src:/src/src:/src/tests/unit:/usr/local/lib/omv-protondrive-vm'},
     )
     configure_session()
     test_private_session()

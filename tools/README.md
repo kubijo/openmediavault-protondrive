@@ -18,14 +18,12 @@ The Python scripts run in the uv/uv2nix tooling environment. The web probe uses 
 The NAS runtime has separate Debian compatibility requirements. See [maintenance commands](../docs/maintenance.md) for
 usage and output behaviour.
 
-Crash reports hide local variables and use plain tracebacks in clanker, no-colour, or dumb-terminal mode. The
-interactive guest installer shares this policy and installs Debian's `python3-rich`; bootstrap failures before Rich is
-available use Python's normal traceback.
+Crash reports hide locals; clanker/no-colour/dumb-terminal modes use plain tracebacks. Guest bootstrap uses plain
+tracebacks until Rich is installed.
 
 `tests/` covers reports, audits, console behaviour, and template validation. Its `fixtures/templates/` directory holds
 readable valid and intentionally invalid templates. All receive whitespace checks; invalid fixtures are excluded from
 Salt lint and must fail rendering or output validation in the tests.
 
-`just/` contains the `app`, `dev`, `test`, and `vm` modules. Each imports `prelude.just` for shared settings and the
-repository working directory. Run `just` to list modules, `just dev` to list development recipes, or
-`just --list --list-submodules` to list everything. Invoke recipes with `just dev::validate`, for example.
+`just/` contains `app`, `dev`, `test` and `vm` recipes with a shared prelude. Run `just --list --list-submodules` to
+list them; invoke with `just dev::validate`, for example.

@@ -52,16 +52,16 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1791058745,
-        "narHash": "sha256-XWjvSewc7Vk9NrhO45jZ4leYx9Se3/DXBgeZq6tQqyE=",
+        "lastModified": 1791386606,
+        "narHash": "sha256-AtKsP6qvRWyftXRVeazqwjWWeZ9j704KyP5VNe8xVqY=",
         "owner": "kubijo",
         "repo": "nix-tools",
-        "rev": "0dfac45783879c9ab1cb13740083fe1c903c8964",
+        "rev": "39cc764792894d45242e89827adba8bdac9a3ce9",
         "type": "github"
       },
       "original": {
         "owner": "kubijo",
-        "ref": "v0.7.2",
+        "ref": "v0.9.0",
         "repo": "nix-tools",
         "type": "github"
       }
@@ -84,11 +84,11 @@
     },
     "nixpkgs-pinned": {
       "locked": {
-        "lastModified": 1790652569,
-        "narHash": "sha256-641r7xrlSOHYoktL9/aArPIYNgZJ9eM5URzSEOtPJDY=",
+        "lastModified": 1791306662,
+        "narHash": "sha256-bIhK7AMT7yU8Hkjzaag0MDpqbqiMTvN6UJ0U6Zs63OI=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "b6c8664de9b6cc07fe5666a29f91884ba81197c4",
+        "rev": "e2ccecbf30866802b1db536246e0939eccbd7bfb",
         "type": "github"
       },
       "original": {
@@ -114,11 +114,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790565003,
-        "narHash": "sha256-q4W45pwcae0gK41vxzqfmXOnODGKfduLJJdraPHYXcY=",
+        "lastModified": 1791170410,
+        "narHash": "sha256-pyru9MpuXRiyq0Bd4q0nHpL4T6HCuZT4B+alcgAYE4A=",
         "owner": "pyproject-nix",
         "repo": "build-system-pkgs",
-        "rev": "c84c47bba26ea303eaefc137ab48307fe57a1be1",
+        "rev": "953d35d03a51dbecaf3feb3fb679eb63e90ebeb4",
         "type": "github"
       },
       "original": {

@@ -46,17 +46,16 @@ let
       ]
       [ 1 ]
     )
-    (step "Unused and undeclared Python dependencies"
+    (step "API Python lock consistency"
       [
-        (lib.getExe pkgs.deptry)
-        "."
-        # Discover first-party modules from the host, guest, and test import roots.
-        "src"
-        "tools"
-        "tools/tests"
-        "tests/unit"
-        "tests/integration"
-        "--no-ansi"
+        (lib.getExe pkgs.uv)
+        "lock"
+        "--project"
+        "src/api"
+        "--check"
+        "--offline"
+        "--python"
+        "${python}/bin/python"
       ]
       [ 1 ]
     )
@@ -96,8 +95,14 @@ in
 {
   outdated = {
     enable = true;
-    uv = true;
-    pnpm.root = "tools/web-probe";
+    uv.projects = {
+      tooling.root = ".";
+      api.root = "src/api";
+    };
+    pnpm.projects = {
+      probe.root = "tools/web-probe";
+      app.root = "src/web/app";
+    };
     githubActions = true;
     releases = {
       nix = (github pkgs.nix "NixOS/nix") // {
@@ -167,5 +172,5 @@ in
       timeout = 120;
     };
   };
-  audit = app "audit" [ pkgs.uv pkgs.gitleaks pkgs.deptry ] [ "--plan" (toString auditPlan) ];
+  audit = app "audit" [ pkgs.uv pkgs.gitleaks ] [ "--plan" (toString auditPlan) ];
 }

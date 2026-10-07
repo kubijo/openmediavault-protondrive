@@ -26,6 +26,7 @@ in
 pkgs.runCommand "openmediavault-protondrive-7.0.0"
   {
     nativeBuildInputs = [
+      pkgs.binutils
       pkgs.dpkg
       pkgs.gzip
     ];
@@ -41,6 +42,9 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
         cp -r ${src}/${source} package/${destination}
       '') installPaths
     )}
+    mkdir -p package/usr/lib/openmediavault-protondrive/api package/usr/share/openmediavault-protondrive/web
+    cp -r ${apiRuntime}/. package/usr/lib/openmediavault-protondrive/api/
+    cp -r ${webApp}/. package/usr/share/openmediavault-protondrive/web/
     find package -type d -exec chmod 0755 {} +
     find package -type f -exec chmod 0644 {} +
     ${python}/bin/python ${src}/tools/build_workbench.py \
@@ -48,9 +52,8 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
       package/usr/share/openmediavault/workbench
     find package -name __pycache__ -type d -prune -exec rm -r {} +
     find package -name '*.pyc' -delete
-    mkdir -p package/usr/lib/openmediavault-protondrive/api package/usr/share/openmediavault-protondrive/web
-    cp -r ${apiRuntime}/. package/usr/lib/openmediavault-protondrive/api/
-    cp -r ${webApp}/. package/usr/share/openmediavault-protondrive/web/
+    find package/usr/lib/openmediavault-protondrive/api -type f -name '*.so' \
+      -exec strip --strip-unneeded {} +
     install -Dm755 ${cli} package/usr/lib/openmediavault-protondrive/proton-drive
     chmod 0755 package/usr/sbin/* package/usr/share/openmediavault/confdb/create.d/* \
       package/usr/share/openmediavault-protondrive/session.sh

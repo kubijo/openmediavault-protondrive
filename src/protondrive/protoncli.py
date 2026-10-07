@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .cli_lock import inspect_lock
 from .common import BINARY, STATE, BackupError, atomic_json, sync_directory
 from .json_data import JSONValue, decode
 from .models import Configuration, RemoteEntry, TransferStatus
@@ -143,6 +144,9 @@ class ProtonCli:
         with self.lock:
             if self.login is not None:
                 raise BackupError('Sign-in is in progress')
+            diagnostic = inspect_lock()
+            if diagnostic:
+                raise BackupError(diagnostic)
             command = [self.binary, *args, *(['--json'] if json_output else [])]
             timeout = self.config['transfertimeout' if transfer else 'commandtimeout']
             proc = subprocess.Popen(
@@ -171,6 +175,19 @@ class ProtonCli:
                 # Raw diagnostics may contain tokens. Log operation and exit only.
                 raise BackupError(f'Proton {args[0]} {args[1]} failed (exit {proc.returncode})')
             return parse_json(out) if json_output else out
+
+    def repair_lock(self) -> dict[str, str | bool]:
+        # Match login/logout lock ordering and exclude probes as well as jobs.
+        with self.state_lock:
+            if not self.lock.acquire(blocking=False):
+                raise BackupError('A Proton operation is in progress')
+            try:
+                if self.login is not None or self.current is not None:
+                    raise BackupError('A Proton operation is in progress')
+                evidence = inspect_lock(repair=True)
+                return {'repaired': evidence is not None, 'evidence': evidence or ''}
+            finally:
+                self.lock.release()
 
     def transfer_status(self) -> TransferStatus:
         transfer = self.transfer

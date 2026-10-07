@@ -1,5 +1,6 @@
 import type { Page } from 'playwright-core';
 import { screenshot } from './artifacts.ts';
+import type { BrowserErrors } from './browser-errors.ts';
 import { requireCondition } from './layout.ts';
 import type { ProbeOptions } from './options.ts';
 import { exerciseOwnedEdits } from './owned-ui-edits.ts';
@@ -12,6 +13,7 @@ export async function checkOwnedUi(
     width: number,
     screenshots: string[],
     signal: AbortSignal,
+    browserErrors: BrowserErrors,
 ): Promise<string> {
     await page.goto(`${options.url}/protondrive/`);
     await page.getByRole('heading', { name: 'Backup', exact: true }).waitFor();
@@ -22,6 +24,10 @@ export async function checkOwnedUi(
     await root.waitFor();
     const remoteFolder = await root.inputValue();
     requireCondition(remoteFolder === options.expectedRoot, `Unexpected remote root: ${remoteFolder}`);
+    if (options.expectedHour !== undefined) {
+        const hour = await page.getByRole('textbox', { name: 'Backup hour (server time)' }).inputValue();
+        requireCondition(Number(hour) === options.expectedHour, `Unexpected backup hour: ${hour}`);
+    }
     await screenshot(page, options.output, `owned-settings-${width}.png`, screenshots);
     await page.getByRole('link', { name: 'Backup sets', exact: true }).click();
     await page.getByText('appData', { exact: true }).waitFor();
@@ -33,7 +39,8 @@ export async function checkOwnedUi(
     }));
     requireCondition(geometry.content <= geometry.viewport, `Owned UI overflows at ${width}px`);
     if (options.ownedUiChanges) await exerciseOwnedEdits(page, options, width, screenshots, signal);
-    if (options.ownedUiRestore) await exerciseOwnedRestore(page, options, width, screenshots, signal);
+    if (options.ownedUiRestore) await exerciseOwnedRestore(page, options, width, screenshots, signal, browserErrors);
+    if (options.ownedUiInterrupt) return remoteFolder;
     if (options.expectSignedIn) {
         await page.goto(`${options.url}/protondrive/`);
         const response = page.waitForResponse(item => item.url().endsWith('/BrowseBackups'));

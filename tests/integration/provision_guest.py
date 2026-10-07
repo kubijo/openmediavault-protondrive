@@ -52,6 +52,11 @@ def seal():
     )
     if installed.stdout.strip() == 'installed':
         raise RuntimeError('Refusing to cache a base containing the plugin')
+    seal_identity()
+
+
+def seal_identity() -> None:
+    """Forget machine and SSH identity before publishing a stopped image."""
     run('systemctl', 'stop', 'docker.service', 'docker.socket', 'containerd.service')
     run('cloud-init', 'clean', '--logs', '--seed')
     Path('/etc/machine-id').write_text('uninitialized\n')

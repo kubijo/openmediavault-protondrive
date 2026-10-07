@@ -25,22 +25,16 @@ tests run weekly or manually. Local commands and CI use the same published nix-t
 
 Just modules, recipes, and the shared prelude are formatted by just and checked by its parser. The basedpyright gate
 checks the complete Python source and test tree, including executable fixtures, with Any and Unknown rejected. Both the
-checker and Ruff target Python 3.11 for Debian compatibility; Zed reads the same project configuration.
+checker and Ruff target Python 3.11 for Debian compatibility; Zed reads the same project configuration. Native deptry
+checks validate tooling and API dependency declarations separately, including generated API imports.
 
 Whitespace-only formatting uses an explicit EditorConfig policy. Salt/Jinja have no semantic formatter; salt-lint rule
 205 is exempted only for Jinja extensions. Rendered JSON, YAML and unit INI syntax are checked locally; systemd
 validates the installed units in the VM. See the [coverage policy](../infra/nix/coverage.nix) for explicit exceptions.
 
-[Guest tests](../tests/integration/README.md) cover filesystem metadata, private keyring sessions, OMV deployment,
-backup/restore and container recovery. They run the root/metadata tests skipped in the Nix sandbox. Proton is faked for
-the disposable backup tests. The opt-in `just vm::live` flow uses a signed-in development account for UI-triggered
-backup and real download/restore, then a controlled archive hold for UI cancellation and container recovery.
-`just vm::retry` exercises a bounded upload network fault, preservation of pending archives, and retry before container
-stops, followed by download and restore. Videos, screenshots, and a JSON report record the result. `just vm::crash`
-exercises the real runner's SIGKILL and abrupt VM reboot paths, including failed Docker starts and preservation of
-complete pending archives, with failed and successful recovery driven through the web UI. Initial sign-in and broader
-network-failure scenarios remain manual release checks. Guest images and the CLI are pinned; Debian/OMV apt dependencies
-are resolved at run time.
+[Guest tests](../tests/integration/README.md) cover metadata, keyring, deployment, backup/restore and container
+recovery, including tests skipped in the Nix sandbox. Disposable tests fake Proton; authenticated flows and remaining
+release gates are listed there. Images and CLI are pinned; apt dependencies resolve during provisioning.
 
 Upstream `LICENSE` text is preserved; Nix manages `flake.lock`. Generated outputs and caches are excluded. Lintian
 overrides cover OMV's required `/srv/salt` path and the unchanged vendor executable.

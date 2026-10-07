@@ -57,13 +57,10 @@ GitHub Actions runs QA and Debian integration on pushes and pull requests; OMV V
 container recovery and backup/restore in an isolated QEMU guest. Initial Proton sign-in and broader failure scenarios
 remain separate [release checks](tests/integration/README.md).
 
-For hands-on testing, `just vm::up` starts a persistent local OMV VM in the background and opens its SSH shell. Exiting
-SSH leaves the VM running. Use `just vm::ssh` to reconnect and `just vm::down` to shut it down without losing the login
-session. The guest login banner lists its own `just` commands. See the
-[interactive VM instructions](tests/integration/README.md#interactive-vm). `just vm::probe` checks the running VM in
-Chromium and saves desktop/mobile screenshots and videos. `just vm::live` exercises real UI backup, download/restore,
-and controlled cancellation using the signed-in development account. `just vm::flow` runs a separate VM through web
-setting changes, disk restore, reset, and the backup/restore suite without touching the hands-on VM.
+`just test::regression` owns disposable VM setup, browser assertions and teardown over cached layers; see `--help`. For
+[hands-on testing](tests/integration/README.md#interactive-vm), use `just vm::up` and explicitly stop it with
+`just vm::down`. Browser probes and authenticated flows are documented with the
+[integration tests](tests/integration/README.md).
 
 - [QA coverage](docs/qa-coverage.md)
 - [Version reporting and security audits](docs/maintenance.md): `just dev::outdated` and `just dev::audit`.

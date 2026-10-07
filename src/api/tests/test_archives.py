@@ -19,6 +19,8 @@ from protondrive.models import Manifest
 from protondrive.operation import OperationControl
 from protondrive.restore_journal import OWNER_FILE, Publication
 from protondrive_api.archives import Archives, copy_download
+from protondrive_api.broker import Controller
+from protondrive_api.omv import OMV
 from protondrive_api.store import Store
 from protondrive_api.v1 import control_pb2 as wire
 
@@ -26,6 +28,17 @@ from protondrive_api.v1 import control_pb2 as wire
 @pytest.fixture(autouse=True)
 def private_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr('protondrive_api.archives.STATE', tmp_path)
+
+
+def test_expected_remote_failure_is_actionable_at_the_broker_boundary(tmp_path: Path) -> None:
+    controller = Controller(Store(tmp_path / 'jobs.sqlite3'), OMV())
+    try:
+        with patch('protondrive_api.archives.request', side_effect=BackupError('Proton service is busy')):
+            response = controller.respond(wire.BrokerRequest(actor='admin', backups=wire.BrowseBackupsRequest()))
+        assert response.error.code == 'failed_precondition'
+        assert response.error.message == 'Proton service is busy'
+    finally:
+        controller.close()
 
 
 @pytest.mark.parametrize('corrupt', [False, True])

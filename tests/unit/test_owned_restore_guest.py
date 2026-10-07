@@ -1,6 +1,9 @@
 """The browser fixture helper must never clean unrelated guest paths."""
 
 import io
+import os
+import shutil
+import tarfile
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -12,6 +15,33 @@ from tests.integration import owned_restore_guest as guest
 
 
 class OwnedRestoreFixtureTests(unittest.TestCase):
+    def test_metadata_is_compared_to_the_verified_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            source.write_text('expected')
+            source.chmod(0o640)
+            os.utime(source, (1_700_000_000, 1_700_000_000))
+            inspection = str(uuid4())
+            cache = root / 'restore-cache' / inspection
+            cache.mkdir(parents=True)
+            with tarfile.open(cache / 'archive.tar', 'w') as archive:
+                archive.add(source, arcname=str(source.relative_to('/')))
+            with (
+                patch.object(guest, 'ROOT', root / 'fixtures'),
+                patch.object(guest, 'SOURCE', source),
+                patch.object(guest, 'STATE', root),
+            ):
+                token = str(uuid4())
+                prepared = guest.prepare(token)
+                restored = Path(prepared['destination']) / source.relative_to('/')
+                restored.parent.mkdir(parents=True)
+                shutil.copy2(source, restored)
+                self.assertEqual(guest.verify(token, inspection), {'verified': True, 'metadata': True})
+                restored.chmod(0o600)
+                with self.assertRaisesRegex(RuntimeError, 'permissions'):
+                    guest.verify(token, inspection)
+
     def test_cli_keeps_positional_arguments_and_dispatches_typed_actions(self) -> None:
         token = str(uuid4())
         for action in ('prepare', 'verify', 'cleanup'):
@@ -57,7 +87,7 @@ class OwnedRestoreFixtureTests(unittest.TestCase):
                 restored = Path(result['destination']) / source.relative_to('/')
                 restored.parent.mkdir(parents=True)
                 restored.write_text('expected')
-                self.assertEqual(guest.verify(token), {'verified': True})
+                self.assertEqual(guest.verify(token), {'verified': True, 'metadata': False})
                 restored.write_text('damaged')
                 with self.assertRaisesRegex(RuntimeError, 'differs'):
                     guest.verify(token)

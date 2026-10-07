@@ -53,6 +53,7 @@ pkgs.runCommand "omv-protondrive-vm-tools"
     mkdir -p "$out" "$TMPDIR/omv-protondrive-vm"
     cp -r ${src}/tests/integration/. "$TMPDIR/omv-protondrive-vm/"
     cp ${src}/tools/*.py "$TMPDIR/omv-protondrive-vm/"
+    cp ${src}/tests/fixtures/fake_proton_filesystem.py "$TMPDIR/omv-protondrive-vm/"
     # Ship the locked portable dependencies beside the guest scripts. Do not copy
     # a host virtualenv or install packages into Debian's system Python.
     ${lib.concatMapStringsSep "\n" (
@@ -64,6 +65,9 @@ pkgs.runCommand "omv-protondrive-vm-tools"
     chmod u+w "$TMPDIR/omv-protondrive-vm/ui-cancel-bin"
     chmod +x "$TMPDIR/omv-protondrive-vm/ui-cancel-bin/tar.sh"
     ln -s tar.sh "$TMPDIR/omv-protondrive-vm/ui-cancel-bin/tar"
+    chmod u+w "$TMPDIR/omv-protondrive-vm/owned-restore-bin"
+    chmod +x "$TMPDIR/omv-protondrive-vm/owned-restore-bin/tar.sh"
+    ln -s tar.sh "$TMPDIR/omv-protondrive-vm/owned-restore-bin/tar"
     install -m 0755 ${pkgs.pkgsStatic.just}/bin/just "$TMPDIR/omv-protondrive-vm/just"
     tar -C "$TMPDIR" -cf "$out/omv-protondrive-vm-tools.tar" omv-protondrive-vm
   ''

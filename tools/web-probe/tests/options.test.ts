@@ -143,3 +143,32 @@ test('one viewport permits a validated root or hour change', () => {
     assert.equal(options.expectSignedIn, true);
     assert.equal(options.json, true);
 });
+
+test('regression backup requires restore, matching VM state, and cannot run during recovery', () => {
+    const state = mkdtempSync(join(tmpdir(), 'web-probe-regression-'));
+    mkdirSync(join(state, 'instance'));
+    writeFileSync(join(state, 'instance', 'admin-password'), 'fixture-password\n');
+    const args = ['--state-dir', state, '--owned-ui', '--owned-ui-restore', '--owned-ui-backup'];
+    try {
+        writeFileSync(join(state, 'instance', 'instance.json'), JSON.stringify({ http_port: 8080 }));
+        assert.throws(() => optionsFromArgs(args), /requires a disposable regression VM/);
+        writeFileSync(join(state, 'instance', 'instance.json'), JSON.stringify({ http_port: 8080, regression: true }));
+        assert.equal(optionsFromArgs(args)?.ownedUiBackup, true);
+        assert.equal(optionsFromArgs([...args, '--owned-ui-resilience'])?.ownedUiResilience, true);
+        assert.equal(optionsFromArgs([...args, '--owned-ui-interrupt'])?.ownedUiInterrupt, true);
+        assert.equal(optionsFromArgs([...args, '--owned-ui-foreign'])?.ownedUiForeign, true);
+        for (const flag of ['--owned-ui-resilience', '--owned-ui-interrupt', '--owned-ui-foreign']) {
+            const restore = args.filter(arg => arg !== '--owned-ui-backup');
+            assert.throws(() => optionsFromArgs([...restore, flag, '--recover']), /cannot be combined with --recover/);
+            assert.throws(() => optionsFromArgs(['--owned-ui', flag]), /require --owned-ui-restore/);
+        }
+        assert.throws(() => optionsFromArgs([...args, '--recover']), /cannot be combined with --recover/);
+        assert.throws(
+            () => optionsFromArgs(args.filter(arg => arg !== '--owned-ui-restore')),
+            /requires --owned-ui-restore/,
+        );
+        assert.throws(() => optionsFromArgs([...args, '--url', 'http://127.0.0.1:8081']), /must match/);
+    } finally {
+        rmSync(state, { recursive: true, force: true });
+    }
+});

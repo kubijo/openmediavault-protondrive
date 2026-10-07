@@ -56,6 +56,6 @@ retry *args:
 crash *args:
     nix run {{ nix_args }} .#web-probe -- --live --crash-recovery "$@"
 
-# Exercise disposable init, web changes, snapshot restore, reset, and backup restore.
-flow:
-    python3 tools/vm_flow.py
+# Alias for the disposable local regression suite.
+flow *args:
+    nix run {{ nix_args }} .#test-regression -- "$@"

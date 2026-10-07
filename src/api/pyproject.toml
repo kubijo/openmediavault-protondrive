@@ -7,6 +7,7 @@ dependencies = [
     "connectrpc>=0.12",
     "protobuf>=6",
     "protovalidate>=1",
+    "pyqwest>=0.11", # Imported directly by the generated Connect client.
     "sqlalchemy>=2",
     "uvicorn>=0.35",
 ]
@@ -44,3 +45,14 @@ reportExplicitAny = "error"
 pythonVersion = "3.11"
 pythonPlatform = "Linux"
 extraPaths = [".."]
+
+[tool.deptry]
+experimental_namespace_package = true # Includes the generated buf.validate namespace.
+extend_exclude = ["(^|.*/)tests(/|$)"]
+known_first_party = ["protondrive"] # Installed alongside the API by the Debian package.
+
+[tool.deptry.package_module_name_map]
+protobuf = "google"
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["uvicorn"] # Started through python -m uvicorn by the systemd unit.
