@@ -3,6 +3,7 @@ set -eu
 
 case "$1" in
     remove | upgrade | deconfigure)
+        systemctl stop omv-protondrive-api.service omv-protondrive-controller.service 2>/dev/null || true
         systemctl stop omv-protondrive-backup.timer 2>/dev/null || true
         if systemctl cat omv-protondrive-backup.service >/dev/null 2>&1; then
             systemctl stop omv-protondrive-backup.service

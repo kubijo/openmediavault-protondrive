@@ -183,11 +183,11 @@ class ProtonCli:
             'transferelapsed': max(0, int(time.monotonic() - started)),
         }
 
-    def cancel_transfer(self) -> None:
+    def cancel_transfer(self, force: bool = False) -> None:
         proc = self.current
         if proc is not None:
             try:
-                os.killpg(proc.pid, signal.SIGTERM)
+                os.killpg(proc.pid, signal.SIGKILL if force else signal.SIGTERM)
             except ProcessLookupError:
                 pass
 

@@ -41,6 +41,31 @@ def run_service(path: Path) -> None:
 
 
 class DaemonTests(unittest.TestCase):
+    def test_foreign_browsing_never_claims_or_creates_storage(self) -> None:
+        config, item = configuration()
+        service = object.__new__(daemon.Service)
+        service.config = config
+        listing = Mock(return_value=[])
+        ownership = Mock()
+        folders = Mock()
+        service.cli = Mock(list=listing, ensure_instance_owned=ownership, ensure_folder=folders)
+        service.operations = threading.Lock()
+        foreign = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+        self.assertEqual(
+            service.dispatch({'operation': 'browse', 'instanceuuid': foreign, 'setuuid': item['uuid']}), []
+        )
+        listing.assert_called_once_with(f'{config["remotepath"]}/{foreign}/{item["uuid"]}')
+        ownership.assert_not_called()
+        folders.assert_not_called()
+        listing.reset_mock()
+        for message in (
+            {'operation': 'browse', 'instanceuuid': '../outside'},
+            {'operation': 'browse', 'setuuid': item['uuid']},
+        ):
+            with self.assertRaises(BackupError):
+                service.dispatch(object_value(message))
+        listing.assert_not_called()
+
     def test_invalid_requests_do_not_create_remote_storage(self):
         config, item = configuration()
         service = object.__new__(daemon.Service)

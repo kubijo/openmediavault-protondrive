@@ -3,6 +3,8 @@
   python,
   src,
   cli,
+  apiRuntime,
+  webApp,
 }:
 let
   # Source organization is independent of OMV's required installation paths.
@@ -11,6 +13,9 @@ let
     "src/bin/omv-protondrive-auth" = "usr/sbin/omv-protondrive-auth";
     "src/bin/session.sh" = "usr/share/openmediavault-protondrive/session.sh";
     "src/protondrive" = "usr/share/openmediavault-protondrive/protondrive";
+    "src/api/protondrive_api" = "usr/share/openmediavault-protondrive/protondrive_api";
+    "src/api/buf" = "usr/share/openmediavault-protondrive/buf";
+    "src/api/auth.php" = "usr/share/openmediavault-protondrive/auth.php";
     "src/omv" = "usr/share/openmediavault";
     "src/salt" = "srv/salt/omv/deploy/protondrive";
     "src/monit/protondrive.sls" = "srv/salt/omv/deploy/monit/services/protondrive.sls";
@@ -43,6 +48,9 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
       package/usr/share/openmediavault/workbench
     find package -name __pycache__ -type d -prune -exec rm -r {} +
     find package -name '*.pyc' -delete
+    mkdir -p package/usr/lib/openmediavault-protondrive/api package/usr/share/openmediavault-protondrive/web
+    cp -r ${apiRuntime}/. package/usr/lib/openmediavault-protondrive/api/
+    cp -r ${webApp}/. package/usr/share/openmediavault-protondrive/web/
     install -Dm755 ${cli} package/usr/lib/openmediavault-protondrive/proton-drive
     chmod 0755 package/usr/sbin/* package/usr/share/openmediavault/confdb/create.d/* \
       package/usr/share/openmediavault-protondrive/session.sh

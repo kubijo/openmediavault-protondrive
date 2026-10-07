@@ -11,6 +11,7 @@ import { checkOverviewLayout, checkSetsStart, requireCondition, scrollSetsRight 
 import { GuestCommandError, runLiveFlow } from './live.ts';
 import type { ProbeOptions } from './options.ts';
 import { optionsFromArgs } from './options.ts';
+import { checkOwnedUi } from './owned-ui.ts';
 import { Progress } from './progress.ts';
 import { prepareBrowserReboot } from './session.ts';
 
@@ -105,6 +106,16 @@ async function runViewport(
     try {
         signal.throwIfAborted();
         await progress.stage('Log in to OMV', () => login(page, options), { viewport: width });
+        if (options.ownedUi) {
+            const remoteFolder = await progress.stage(
+                'Check owned UI',
+                () => checkOwnedUi(page, options, width, screenshots, signal),
+                { viewport: width },
+            );
+            const errors = browserErrors.messages();
+            requireCondition(errors.length === 0, `Browser errors at ${width}px: ${errors.join('; ')}`);
+            return { remoteFolder };
+        }
         await progress.stage(
             'Check overview',
             async () => {

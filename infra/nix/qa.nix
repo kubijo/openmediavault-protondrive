@@ -12,6 +12,7 @@ let
     ];
     text = ''
       export PYTHONPATH="$PWD/tools:$PWD/tools/tests"
+      export PROTONDRIVE_NGINX_FASTCGI_PARAMS=${pkgs.nginx}/conf/fastcgi_params
       exec python -m unittest test_interactive_vm.InteractiveVMTests.test_branding_is_idempotent_and_preserves_packaged_html
     '';
   };
@@ -34,8 +35,10 @@ let
     text = ''
       export PYTHONPATH="$PWD/src:$PWD/tests/unit:$PWD/tools"
       export PYTHONDONTWRITEBYTECODE=1
+      export PROTONDRIVE_NGINX_FASTCGI_PARAMS=${pkgs.nginx}/conf/fastcgi_params
       python3 -m unittest discover -s tests/unit -v
       python3 -m unittest discover -s tools/tests -v
+      python3 -m pytest src/api/tests -q
     '';
   };
   tracked = pkgs.writeShellApplication {

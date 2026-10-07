@@ -89,6 +89,17 @@ def validate(value: object) -> Configuration:
             'paths': string(data['paths']),
             'excludes': string(data['excludes']),
         }
+        selected_containers = string(data.get('containerids', ''))
+        selected_projects = string(data.get('composeprojects', ''))
+        if any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in lines(selected_containers)):
+            raise BackupError('Selected containers must be full Docker identifiers')
+        if any(not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', name) for name in lines(selected_projects)):
+            raise BackupError('Invalid Compose project name')
+        if selected_containers or selected_projects:
+            if item['stopcontainers']:
+                raise BackupError('Choose either all containers or an explicit application scope')
+            item['containerids'] = selected_containers
+            item['composeprojects'] = selected_projects
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,63}', item['name']):
             raise BackupError('Set name must be a simple unique identifier')
         if item['name'] in names or item['uuid'] in ids:

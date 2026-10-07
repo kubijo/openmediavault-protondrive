@@ -30,6 +30,9 @@ dependencies in `.venv`. Nix assembles the package using the hash-pinned CLI sou
 
 Scheduling starts disabled; the default time is 03:00 in the NAS timezone, with no catch-up at boot.
 
+The **Open backup console** link opens the [owned web application](docs/owned-ui.md); its restore workflows are still
+under development.
+
 | Set     | Paths                                   | Excluded relative paths                         | Containers                   |
 | ------- | --------------------------------------- | ----------------------------------------------- | ---------------------------- |
 | system  | `/etc`, `/usr/local`, `/var/spool/cron` | None                                            | Keep running                 |

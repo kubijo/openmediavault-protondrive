@@ -1,0 +1,24 @@
+[Unit]
+Description=Proton Drive web RPC API
+After=omv-protondrive-controller.service
+Requires=omv-protondrive-controller.service
+
+[Service]
+Type=simple
+User=protondrive-api
+Group=www-data
+SupplementaryGroups=protondrive-api
+RuntimeDirectory=omv-protondrive-api
+RuntimeDirectoryMode=0750
+UMask=0007
+Environment=PYTHONPATH=/usr/share/openmediavault-protondrive:/usr/lib/openmediavault-protondrive/api
+ExecStart=/usr/bin/python3 -m uvicorn protondrive_api.service:app --uds /run/omv-protondrive-api/api.sock --no-access-log --no-proxy-headers
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

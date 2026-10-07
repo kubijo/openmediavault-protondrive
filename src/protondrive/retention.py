@@ -21,17 +21,22 @@ class RemoteFiles(Protocol):
 
 
 def metadata(value: object, config: Configuration, item: BackupSet, name: str) -> Manifest:
+    return archive_metadata(value, config['instanceuuid'], item['uuid'], name, item['name'])
+
+
+def archive_metadata(value: object, instance: str, set_id: str, name: str, set_name: str | None = None) -> Manifest:
     if not is_object(value):
         raise BackupError('Invalid backup manifest')
     value = object_value(value)
     if (
         value.get('format') != 1
-        or value.get('instanceuuid') != config['instanceuuid']
-        or value.get('setuuid') != item['uuid']
+        or value.get('instanceuuid') != instance
+        or value.get('setuuid') != set_id
         or value.get('archive') != name
     ):
         raise BackupError('Backup manifest identity mismatch')
-    match = re.fullmatch(re.escape(item['name']) + r'-(\d{8}T\d{4}Z)\.tar\.zst', name)
+    prefix = re.escape(set_name) if set_name is not None else r'[A-Za-z][A-Za-z0-9_-]{0,63}'
+    match = re.fullmatch(prefix + r'-(\d{8}T\d{4}Z)\.tar\.zst', name)
     if not match or value.get('timestamp') != match[1]:
         raise BackupError('Invalid backup timestamp')
     datetime.strptime(match[1], '%Y%m%dT%H%M%z')
@@ -40,8 +45,8 @@ def metadata(value: object, config: Configuration, item: BackupSet, name: str) -
         raise BackupError('Invalid backup size or digest')
     return {
         'format': 1,
-        'instanceuuid': config['instanceuuid'],
-        'setuuid': item['uuid'],
+        'instanceuuid': instance,
+        'setuuid': set_id,
         'archive': name,
         'timestamp': match[1],
         'size': size,

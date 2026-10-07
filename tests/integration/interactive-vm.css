@@ -41,6 +41,10 @@ body:has(#omv-test-banner) .mat-toolbar {
     background: #292524;
 }
 
+body:has(#omv-test-banner) .mantine-AppShell-header {
+    top: 56px;
+}
+
 @media (max-width: 600px) {
     #omv-test-banner {
         gap: 8px;

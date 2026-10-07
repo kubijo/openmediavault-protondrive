@@ -53,7 +53,10 @@ protondrive_validate:
     - require:
       - file: protondrive_config
 
-{% for unit in ['protondrive.service', 'protondrive-backup.service', 'protondrive-backup.timer', 'protondrive-recover.service'] %}
+{% for unit in [
+  'protondrive.service', 'protondrive-backup.service', 'protondrive-backup.timer',
+  'protondrive-recover.service', 'protondrive-controller.service', 'protondrive-api.service'
+] %}
 protondrive_unit_{{ loop.index }}:
   file.managed:
     - name: /etc/systemd/system/omv-{{ unit }}
@@ -71,7 +74,7 @@ protondrive_reload:
   cmd.run:
     - name: systemctl daemon-reload
     - onchanges:
-{% for n in range(1, 5) %}
+{% for n in range(1, 7) %}
       - file: protondrive_unit_{{ n }}
 {% endfor %}
 
@@ -92,6 +95,24 @@ protondrive_daemon:
     - watch:
       - file: protondrive_config
       - file: protondrive_unit_1
+
+protondrive_controller:
+  service.running:
+    - name: omv-protondrive-controller
+    - enable: True
+    - require:
+      - cmd: protondrive_reload
+    - watch:
+      - file: protondrive_unit_5
+
+protondrive_api:
+  service.running:
+    - name: omv-protondrive-api
+    - enable: True
+    - require:
+      - service: protondrive_controller
+    - watch:
+      - file: protondrive_unit_6
 
 protondrive_timer:
 {% if config.enable | to_bool %}

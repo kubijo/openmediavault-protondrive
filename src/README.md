@@ -4,6 +4,8 @@
 - `bin/`: command launchers and the private D-Bus/keyring session helper.
 - `omv/`: PHP RPC modules, configuration models, and workbench pages.
 - `salt/`: deployment states and service/configuration templates.
+- `api/`: Connect service, privileged controller, migrations and Debian runtime dependency lock.
+- `web/app/`: the [owned web application](../docs/owned-ui.md), built and checked by the root flake.
 
 [Package assembly](../infra/nix/package.nix) maps these sources to `/usr/sbin`, `/usr/share/openmediavault*`, and
 `/srv/salt/omv/deploy/protondrive`. `/srv` is OMV's installed Salt tree, not a separate service in this repository. The

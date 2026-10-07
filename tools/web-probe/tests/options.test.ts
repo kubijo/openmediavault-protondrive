@@ -108,6 +108,10 @@ test('live flow selects one viewport and requires signed-in assertions', () => {
         assert.throws(() => optionsFromArgs(['--password', 'test', '--recover']), /requires --live/);
         assert.equal(options.expectSignedIn, true);
         assert.equal(options.stateDir, state);
+        const restore = ['--password', 'test', '--owned-ui', '--owned-ui-restore', '--state-dir', state];
+        assert.equal(optionsFromArgs(restore)?.expectSignedIn, true);
+        assert.equal(optionsFromArgs([...restore, '--recover'])?.expectSignedIn, false);
+        assert.equal(optionsFromArgs([...restore, '--recover'])?.recover, true);
         for (const url of ['https://production/', 'http://127.0.0.1:9999', 'http://user@127.0.0.1:8080']) {
             assert.throws(() => optionsFromArgs([...args, '--url', url]), /must match/);
         }

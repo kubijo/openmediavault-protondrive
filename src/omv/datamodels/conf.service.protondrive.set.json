@@ -42,6 +42,14 @@
       "minimum": 1,
       "maximum": 10000,
       "default": 7
+    },
+    "containerids": {
+      "type": "string",
+      "default": ""
+    },
+    "composeprojects": {
+      "type": "string",
+      "default": ""
     }
   }
 }

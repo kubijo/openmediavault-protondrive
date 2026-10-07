@@ -9,6 +9,9 @@ case "$1" in
         if ! getent passwd protondrive >/dev/null; then
             useradd --system --user-group --no-create-home --home-dir /var/lib/openmediavault-protondrive/proton --shell /usr/sbin/nologin protondrive
         fi
+        if ! getent passwd protondrive-api >/dev/null; then
+            useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin protondrive-api
+        fi
 
         install -d -o root -g protondrive -m 0750 /var/lib/openmediavault-protondrive
         install -d -o protondrive -g protondrive -m 0700 /var/lib/openmediavault-protondrive/proton

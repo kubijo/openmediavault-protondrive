@@ -11,10 +11,11 @@ import uuid
 from pathlib import Path
 
 from .common import LIMIT, SOCKET, STATE, BackupError
-from .config import load, remote_folder
+from .config import identifier, load, remote_folder
 from .json_data import JSONValue, decode
 from .models import Configuration
 from .protoncli import ProtonCli
+from .restore_download import Downloads, discard
 from .retention import prune_remote, upload_pair
 
 
@@ -42,6 +43,7 @@ class Service:
     def __init__(self, config: Configuration) -> None:
         self.config = config
         self.cli = ProtonCli(config, owner_id=load_owner_id())
+        self.downloads = Downloads(self.cli.cancel_transfer)
         self.operations = threading.Lock()
         self.probe_guard = threading.Lock()
         self.last_probe = 0.0
@@ -77,6 +79,9 @@ class Service:
         if operation == 'cancel-transfer':
             self.cli.cancel_transfer()
             return True
+        if operation == 'cancel-download':
+            self.downloads.cancel(message.get('jobuuid'))
+            return True
         if operation == 'start-auth':
             return self.cli.start_auth()
         if operation == 'cancel-auth':
@@ -88,6 +93,24 @@ class Service:
         try:
             if operation == 'probe':
                 return self.cli.probe()
+            if operation == 'download-archive':
+                return self.downloads.run(self.cli, self.config, message)
+            if operation == 'discard-download':
+                discard(message.get('jobuuid'))
+                return True
+            if operation == 'browse':
+                # Browsing must never create folders, claim an instance or run
+                # retention, including when reading a different NAS's archives.
+                folder = self.config['remotepath']
+                instance = message.get('instanceuuid')
+                set_id = message.get('setuuid')
+                if set_id is not None and instance is None:
+                    raise BackupError('Browsing a backup set requires an instance')
+                if instance is not None:
+                    folder += '/' + identifier(instance)
+                if set_id is not None:
+                    folder += '/' + identifier(set_id)
+                return self.cli.list(folder)
             if operation not in ('prepare', 'upload', 'prune'):
                 raise BackupError('Unknown Proton operation')
             item = next((item for item in self.config['sets'] if item['uuid'] == message.get('setuuid')), None)

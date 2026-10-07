@@ -12,6 +12,9 @@ export type ProbeOptions = {
     output: string;
     stateDir: string;
     live: boolean;
+    ownedUi: boolean;
+    ownedUiChanges: boolean;
+    ownedUiRestore: boolean;
     uploadRetry: boolean;
     crashRecovery: boolean;
     recover: boolean;
@@ -78,6 +81,12 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
             new Option('--change-root <PATH>', 'Change and verify the root folder (one width only)').argParser(root),
         )
         .option('--expect-signed-in', 'Assert the account and an email are shown as signed in')
+        .option('--owned-ui', 'Check the owned application and its authenticated RPC boundary')
+        .option('--owned-ui-restore', 'Inspect and extract a real archive through the owned UI in the development VM')
+        .option(
+            '--owned-ui-changes',
+            'Exercise and restore owned UI settings and a disabled test set in the development VM',
+        )
         .option(
             '--live',
             'Run a real UI backup, download/restore verification, and controlled cancellation in the test VM',
@@ -85,7 +94,7 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         .option('--headed', 'Show the browser window')
         .option('--upload-retry', 'Test real upload interruption and pending retry (requires --live)')
         .option('--crash-recovery', 'Test SIGKILL and abrupt VM reboot recovery (requires --live)')
-        .option('--recover', 'Recover abandoned live-flow fixtures without prompting (requires --live)')
+        .option('--recover', 'Recover abandoned fixtures (requires --live or --owned-ui-restore)')
         .option('--json', 'Print a JSON result')
         .exitOverride();
     try {
@@ -95,15 +104,23 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         throw error;
     }
     const values = command.opts();
-    if (values.recover && !values.live) throw new Error('--recover requires --live');
+    if (values.ownedUiChanges && !values.ownedUi) throw new Error('--owned-ui-changes requires --owned-ui');
+    if (values.ownedUiRestore && !values.ownedUi) throw new Error('--owned-ui-restore requires --owned-ui');
+    if (values.ownedUi && (values.live || values.changeHour !== undefined || values.changeRoot !== undefined)) {
+        throw new Error('--owned-ui cannot be combined with legacy UI mutations');
+    }
+    if (values.recover && !values.live && !values.ownedUiRestore)
+        throw new Error('--recover requires --live or --owned-ui-restore');
     if (values.uploadRetry && !values.live) throw new Error('--upload-retry requires --live');
     if (values.crashRecovery && !values.live) throw new Error('--crash-recovery requires --live');
     if (values.crashRecovery && values.uploadRetry) throw new Error('Choose either --crash-recovery or --upload-retry');
-    const widths = values.width.length ? values.width : values.live ? [420] : DEFAULT_WIDTHS;
+    const widths = values.width.length ? values.width : values.live || values.ownedUiRestore ? [420] : DEFAULT_WIDTHS;
     if (values.live && (widths.length !== 1 || values.changeHour !== undefined || values.changeRoot !== undefined)) {
         throw new Error('--live requires one viewport and cannot be combined with settings changes');
     }
-    if (values.live) {
+    if (values.ownedUiChanges && widths.length !== 1) throw new Error('--owned-ui-changes requires one --width');
+    if (values.ownedUiRestore && widths.length !== 1) throw new Error('--owned-ui-restore requires one --width');
+    if (values.live || values.ownedUiChanges || values.ownedUiRestore) {
         const metadata: unknown = JSON.parse(readFileSync(join(values.stateDir, 'instance', 'instance.json'), 'utf8'));
         if (
             metadata === null ||
@@ -137,6 +154,9 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         output: values.output,
         stateDir: values.stateDir,
         live: values.live ?? false,
+        ownedUi: values.ownedUi ?? false,
+        ownedUiChanges: values.ownedUiChanges ?? false,
+        ownedUiRestore: values.ownedUiRestore ?? false,
         uploadRetry: values.uploadRetry ?? false,
         crashRecovery: values.crashRecovery ?? false,
         recover: values.recover ?? false,
@@ -145,7 +165,7 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         changedHour: values.changeHour,
         expectedRoot: values.expectRoot,
         changedRoot: values.changeRoot,
-        expectSignedIn: (values.expectSignedIn || values.live) ?? false,
+        expectSignedIn: (values.expectSignedIn || values.live || (values.ownedUiRestore && !values.recover)) ?? false,
         headed: values.headed ?? false,
         json: values.json ?? false,
     };

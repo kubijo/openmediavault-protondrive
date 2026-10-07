@@ -81,12 +81,14 @@ def request(
 
 @overload
 def request(
-    operation: Literal['prepare'], *, timeout: float | None = None, **params: JSONValue
+    operation: Literal['prepare', 'browse'], *, timeout: float | None = None, **params: JSONValue
 ) -> list[RemoteEntry]: ...
 
 
 @overload
-def request(operation: Literal['upload'], *, timeout: float | None = None, **params: JSONValue) -> Manifest: ...
+def request(
+    operation: Literal['upload', 'download-archive'], *, timeout: float | None = None, **params: JSONValue
+) -> Manifest: ...
 
 
 @overload
@@ -108,8 +110,8 @@ def request(operation: str, *, timeout: float | None = None, **params: JSONValue
         value = result['result']
         if operation in ('status', 'probe', 'start-auth', 'cancel-auth', 'logout'):
             return records.service_status(value)
-        if operation == 'prepare':
+        if operation in ('prepare', 'browse'):
             return records.listing(value)
-        if operation == 'upload':
+        if operation in ('upload', 'download-archive'):
             return records.manifest(value)
         return value

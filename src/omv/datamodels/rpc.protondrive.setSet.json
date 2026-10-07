@@ -46,6 +46,14 @@
         "maximum": 10000,
         "default": 7,
         "required": true
+      },
+      "containerids": {
+        "type": "string",
+        "default": ""
+      },
+      "composeprojects": {
+        "type": "string",
+        "default": ""
       }
     },
     "additionalProperties": false

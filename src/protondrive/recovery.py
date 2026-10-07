@@ -68,11 +68,15 @@ class Recovery:
         self.path.unlink()
         sync_directory(self.path.parent)
 
-    def stop(self, timeout: int) -> None:
+    def stop(self, timeout: int, selected: tuple[str, ...] | None = None) -> None:
         self.restore()
         ids = self.command('ps', '--quiet', '--no-trunc').split()
         if any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in ids):
             raise BackupError('Invalid Docker container list')
+        if selected is not None:
+            if any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in selected):
+                raise BackupError('Invalid selected Docker container')
+            ids = [cid for cid in ids if cid in selected]
         atomic_json(self.path, {'ids': ids, 'stop_deadline': 0})
         for cid in ids:
             atomic_json(self.path, {'ids': ids, 'stop_deadline': time.time() + timeout + 5})

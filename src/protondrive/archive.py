@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from .common import BackupError, atomic_json, sync_directory
@@ -100,9 +101,15 @@ def archive(item: BackupSet, partial: Path, reserve: int) -> None:
         os.fsync(stream.fileno())
 
 
-def digest(path: Path) -> str:
+def digest(path: Path, check: Callable[[], None] | None = None) -> str:
     with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        if check is None:
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+        value = hashlib.sha256()
+        while chunk := stream.read(1024 * 1024):
+            check()
+            value.update(chunk)
+        return value.hexdigest()
 
 
 def publish(item: BackupSet, partial: Path, instance: str, timestamp: str, gid: int) -> Path:

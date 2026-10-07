@@ -7,22 +7,31 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "tyro>=1.0",
+    "protondrive-api",
+    "pytest>=9",
+    "pytest-asyncio>=1",
+    "httpx>=0.28",
+    "packaging>=26",
 ]
 
 [tool.uv]
 package = false
 
+[tool.uv.sources]
+protondrive-api = { path = "src/api" }
+
 [tool.ruff]
 cache-dir = ".tmp/ruff_cache"
 line-length = 120
-src = ["src", "tools", "tools/tests", "tests/unit", "tests/integration"]
+src = ["src", "src/api", "tools", "tools/tests", "tests/unit", "tests/integration"]
 target-version = "py311" # Guest code must remain valid on Debian's Python 3.11.
 
 [tool.ruff.format]
 quote-style = "single"
 
 [tool.basedpyright]
-extraPaths = ["src", "tools", "tools/tests", "tests/unit", "tests/integration"]
+extraPaths = ["src", "src/api", "tools", "tools/tests", "tests/unit", "tests/integration"]
+exclude = ["src/api/protondrive_api/v1", "src/api/buf", "**/.venv", "**/node_modules", "**/__pycache__", ".tmp"]
 typeCheckingMode = "strict"
 reportAny = "error"
 reportExplicitAny = "error"

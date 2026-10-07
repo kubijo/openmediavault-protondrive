@@ -186,6 +186,10 @@ def main(package: Path, configuration: Path | None = None):
     check_pending_changes()
     os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
     run('apt-get', 'install', '-y', '--reinstall', '--no-install-recommends', 'python3-rich', 'nftables', str(package))
+    # Reproducible packages share mtimes; Salt must not reuse a previous build's
+    # deployment templates after a development reinstall of the same version.
+    run('salt-call', '--local', 'saltutil.clear_cache')
+    run('salt-call', '--local', 'saltutil.sync_all')
     setup_traceback()
     run('systemctl', 'restart', 'openmediavault-engined')
     if configuration is not None:
@@ -199,7 +203,7 @@ def main(package: Path, configuration: Path | None = None):
     run('omv-mkworkbench', 'all')
     brand_web_ui()
     run('dpkg', '--verify', 'openmediavault-protondrive')
-    run('systemctl', 'is-active', 'nginx', 'omv-protondrive')
+    run('systemctl', 'is-active', 'nginx', 'omv-protondrive', 'omv-protondrive-api', 'omv-protondrive-controller')
     print('PASS: real plugin installed; interactive state retained', flush=True)
 
 

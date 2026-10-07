@@ -33,7 +33,7 @@ in
         "src/bin/omv-protondrive"
       ];
       kind = "semantic";
-      description = "Pinned ty checks the complete Python source and test tree, including executable fixtures";
+      description = "Strict basedpyright checks Python source and tests, including executable fixtures";
     };
     "lint:vm-branding" = {
       includes = [
@@ -94,6 +94,28 @@ in
       kind = "semantic";
       description = "Pinned TypeScript compiler checks the browser probe with strict types";
     };
+    "validate:Owned web application" = {
+      includes = [
+        "src/web/app/**/*.ts"
+        "src/web/app/**/*.tsx"
+        "src/web/app/**/*.scss"
+      ];
+      exclude = [ "src/web/app/src/generated/**" ];
+      kind = "semantic";
+      description = "Strict TypeScript, Stylelint, Rstest and the React Compiler production build";
+    };
+    "validate:Generated API bindings" = {
+      includes = [
+        "proto/**"
+        "buf*.yaml"
+        "buf.lock"
+        "src/api/protondrive_api/v1/**"
+        "src/api/buf/**"
+        "src/web/app/src/generated/**"
+      ];
+      kind = "semantic";
+      description = "Buf schema lint and byte-for-byte regeneration with locked local generators";
+    };
     "validate:Debian package" = {
       includes = [
         "debian/control"
@@ -118,17 +140,35 @@ in
       includes = [
         "flake.lock"
         "uv.lock"
+        "**/uv.lock"
+        "buf.lock"
       ];
       stages = [ "lint" ];
       reason = "Generated locks consumed by Nix and uv2nix; whitespace remains checked, dependency audits run separately";
     }
     {
-      includes = [ "tools/web-probe/pnpm-lock.yaml" ];
+      includes = [
+        "tools/web-probe/pnpm-lock.yaml"
+        "src/web/app/pnpm-lock.yaml"
+      ];
       stages = [
         "format"
         "lint"
       ];
       reason = "pnpm 12 generates a multi-document lockfile; a frozen install validates it during the web-probe type check";
+    }
+    {
+      includes = [
+        "src/api/protondrive_api/v1/**"
+        "src/api/buf/**"
+        "src/web/app/src/generated/**"
+        "src/web/app/src/*.scss.d.ts"
+      ];
+      stages = [
+        "format"
+        "lint"
+      ];
+      reason = "Generated output; pinned generator drift checks and consumers' strict type checks validate it";
     }
     {
       includes = [

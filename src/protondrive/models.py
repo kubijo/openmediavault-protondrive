@@ -1,6 +1,6 @@
 """Validated records shared across the runner and the Proton service."""
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 
 class BackupSet(TypedDict):
@@ -10,6 +10,8 @@ class BackupSet(TypedDict):
     paths: str
     excludes: str
     stopcontainers: bool
+    containerids: NotRequired[str]
+    composeprojects: NotRequired[str]
     localkeep: int
     remotekeep: int
 

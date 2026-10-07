@@ -628,6 +628,8 @@ class InteractiveVMTests(unittest.TestCase):
         )
         source = Path(__file__).resolve().parents[2]
         shutil.copyfile(source / 'src/nginx/90-protondrive.conf', snippets / '90-protondrive.conf')
+        parameters = Path(os.environ.get('PROTONDRIVE_NGINX_FASTCGI_PARAMS', '/etc/nginx/fastcgi_params'))
+        shutil.copyfile(parameters, self.root / 'fastcgi_params')
         configuration = self.root / 'nginx.conf'
         shutil.copyfile(Path(__file__).parent / 'fixtures/nginx.conf', configuration)
         result = subprocess.run(

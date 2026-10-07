@@ -11,6 +11,7 @@ from .archive import archive, check_space, estimate, publish
 from .common import STATE, BackupError, atomic_json, locked, request
 from .completion import record_completion
 from .config import load, remote_folder
+from .containers import selection
 from .json_data import JSONValue, decode, object_value
 from .models import BackupSet, Configuration, Manifest
 from .recovery import Recovery
@@ -80,6 +81,9 @@ def run() -> None:
             items = [item for item in config['sets'] if item['enable']]
             if not items:
                 raise BackupError('No backup sets are enabled')
+            groups: dict[tuple[str, ...] | None, list[BackupSet]] = {}
+            for item in items:
+                groups.setdefault(selection(item), []).append(item)
             gid = grp.getgrnam('protondrive').gr_gid
             staging = Path(config['stagingpath'])
             staging.mkdir(parents=True, exist_ok=True)
@@ -104,15 +108,20 @@ def run() -> None:
                     stale.unlink()
                 required += estimate(item)
             check_space(staging, required, config['minimumfreebytes'])
-            for sensitive in (False, True):
-                group = [item for item in items if item['stopcontainers'] == sensitive]
-                if not group:
-                    continue
+            for selected, group in groups.items():
+                sensitive = selected is None or bool(selected)
                 try:
                     if sensitive:
                         status('stopping-containers')
-                        recovery.stop(config['containerstoptimeout'])
+                        if selected is None:
+                            recovery.stop(config['containerstoptimeout'])
+                        else:
+                            recovery.stop(config['containerstoptimeout'], selected)
                     for item in group:
+                        if selected is not None and selection(item) != selected:
+                            raise BackupError(
+                                'Application containers changed during backup preflight; retry after deployment finishes'
+                            )
                         partial = staging / item['uuid'] / f'{item["name"]}-{timestamp}.tar.zst.partial'
                         status('archiving', message=item['name'])
                         partials.append((item, partial))

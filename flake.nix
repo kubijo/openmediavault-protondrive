@@ -89,8 +89,32 @@
         "*.postrm"
       ];
       cli = import ./infra/nix/proton-cli.nix { inherit pkgs; };
+      apiRuntime = import ./infra/nix/api-runtime.nix {
+        inherit pkgs;
+        src = self;
+      };
+      webApp = import ./infra/nix/web-app.nix {
+        inherit pkgs;
+        src = self;
+      };
+      apiGeneration = import ./infra/nix/api-generation.nix {
+        inherit
+          pkgs
+          webApp
+          qaPython
+          uv2nix
+          pyproject-nix
+          pyproject-build-systems
+          ;
+        src = self;
+      };
       deb = import ./infra/nix/package.nix {
-        inherit pkgs cli;
+        inherit
+          pkgs
+          cli
+          apiRuntime
+          webApp
+          ;
         python = qaPython;
         src = self;
       };
@@ -132,9 +156,14 @@
         inherit (maintenance) outdated;
         format = {
           css = true;
+          scss = true;
+          protobuf = true;
           nunjucks.includes = [ "*.html.njk" ];
           typescript = {
-            includes = [ "*.ts" ];
+            includes = [
+              "*.ts"
+              "*.tsx"
+            ];
             organizeImports = true;
           };
           python = {
@@ -169,6 +198,8 @@
               "**/.gitignore"
               "flake.lock"
               "uv.lock"
+              "**/uv.lock"
+              "buf.lock"
             ];
             exclude = [
               "debian/control"
@@ -182,11 +213,28 @@
               "debian/*.md"
             ];
           };
-          exclude = [ "LICENSE" ];
+          exclude = [
+            "LICENSE"
+            "src/web/app/pnpm-lock.yaml"
+            "src/api/protondrive_api/v1/**"
+            "src/api/buf/**"
+            "src/web/app/src/generated/**"
+            "src/web/app/src/*.scss.d.ts"
+          ];
         };
         lint = {
           nunjucks.includes = [ "*.html.njk" ];
-          typescript.includes = [ "*.ts" ];
+          typescript.includes = [
+            "*.ts"
+            "*.tsx"
+          ];
+          protobuf.package = apiGeneration.buf;
+          exclude = [
+            "src/api/protondrive_api/v1/**"
+            "src/api/buf/**"
+            "src/web/app/src/generated/**"
+            "src/web/app/src/*.scss.d.ts"
+          ];
           nix = true;
           # actionlint 1.7.12 predates this GA runner label; keep other label errors fatal.
           workflows.extraOptions = [
@@ -310,6 +358,14 @@
             run = "test -f ${webProbe.checked}/lib/web-probe/src/main.ts";
           }
           {
+            name = "Owned web application";
+            run = "test -f ${webApp}/index.html";
+          }
+          {
+            name = "Generated API bindings";
+            run = "test -e ${apiGeneration.check}";
+          }
+          {
             name = "Debian package";
             run = "test -f ${deb}/openmediavault-protondrive_7.0.0_amd64.deb";
           }
@@ -322,16 +378,26 @@
         default = deb;
         openmediavault-protondrive = deb;
         proton-drive-source = cli;
+        api-runtime = apiRuntime;
+        web-app = webApp;
+        api-generation = apiGeneration.check;
+        api-schema-dependencies = apiGeneration.dependencies;
       };
       checks.${system} = project.checks // {
         tests = qa.hermeticTests;
         web-probe-types = webProbe.checked;
+        web-app = webApp;
+        api-bindings = apiGeneration.check;
         vm-guest-tools = vmGuestTools;
         debian-test-launcher = pkgs.runCommand "check-debian-test-launcher" { } ''
           ${pkgs.lib.getExe testDebian} --help > "$out"
         '';
       };
       apps.${system} = project.apps // {
+        generate-api = {
+          type = "app";
+          program = pkgs.lib.getExe apiGeneration.generate;
+        };
         audit = {
           type = "app";
           program = pkgs.lib.getExe maintenance.audit;

@@ -137,11 +137,16 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
                 if ($item['name'] !== $candidate['name']) {
                     throw new \RuntimeException('Backup set names cannot be changed');
                 }
+                foreach (['containerids', 'composeprojects'] as $property) {
+                    if (!array_key_exists($property, $params)) {
+                        $object->set($property, $item[$property] ?? '');
+                    }
+                }
             } else {
                 $sets[] = $item;
             }
         }
-        $forValidation = $candidate;
+        $forValidation = $object->getAssoc();
         if ($object->isNew()) {
             $forValidation['uuid'] = \OMV\Uuid::uuid4();
         }
