@@ -5,8 +5,10 @@
   cli,
   apiRuntime,
   webApp,
+  packageMeta,
 }:
 let
+  inherit (packageMeta) name version fileName;
   # Source organization is independent of OMV's required installation paths.
   installPaths = {
     "src/bin/omv-protondrive" = "usr/sbin/omv-protondrive";
@@ -23,7 +25,7 @@ let
     "src/nginx/90-protondrive.conf" = "etc/nginx/openmediavault-webgui.d/90-protondrive.conf";
   };
 in
-pkgs.runCommand "openmediavault-protondrive-7.0.0"
+pkgs.runCommand "${name}-${version}"
   {
     nativeBuildInputs = [
       pkgs.binutils
@@ -58,19 +60,19 @@ pkgs.runCommand "openmediavault-protondrive-7.0.0"
     chmod 0755 package/usr/sbin/* package/usr/share/openmediavault/confdb/create.d/* \
       package/usr/share/openmediavault-protondrive/session.sh
     for script in postinst prerm postrm; do
-      install -m755 debian/openmediavault-protondrive.$script package/DEBIAN/$script
+      install -m755 debian/${name}.$script package/DEBIAN/$script
     done
-    install -m644 debian/openmediavault-protondrive.triggers package/DEBIAN/triggers
+    install -m644 debian/${name}.triggers package/DEBIAN/triggers
     printf '%s\n' /etc/nginx/openmediavault-webgui.d/90-protondrive.conf > package/DEBIAN/conffiles
-    install -Dm644 debian/openmediavault-protondrive.lintian-overrides package/usr/share/lintian/overrides/openmediavault-protondrive
-    docs=package/usr/share/doc/openmediavault-protondrive
+    install -Dm644 debian/${name}.lintian-overrides package/usr/share/lintian/overrides/${name}
+    docs=package/usr/share/doc/${name}
     mkdir -p "$docs"
     install -m644 debian/copyright ${src}/README.md "$docs/"
     install -m644 ${src}/docs/restore.md "$docs/RESTORE.md"
     gzip -n -9 < debian/changelog > "$docs/changelog.gz"
     # Debian's own structured control parser supplies XB fields, version and size.
-    dpkg-gencontrol -popenmediavault-protondrive -Ppackage -v7.0.0
+    dpkg-gencontrol -p${name} -Ppackage -v${version}
     (cd package; find usr srv etc -type f -print0 | sort -z | xargs -0 md5sum) > package/DEBIAN/md5sums
     find package -exec touch --date="@$SOURCE_DATE_EPOCH" {} +
-    dpkg-deb --build --root-owner-group package "$out/openmediavault-protondrive_7.0.0_amd64.deb"
+    dpkg-deb --build --root-owner-group package "$out/${fileName}"
   ''

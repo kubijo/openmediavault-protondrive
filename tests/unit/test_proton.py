@@ -8,13 +8,21 @@ from unittest.mock import Mock, patch
 
 from helpers import configuration
 from protondrive.common import BackupError
-from protondrive.daemon import load_owner_id
 from protondrive.json_data import JSONValue, validate
-from protondrive.models import RemoteEntry
-from protondrive.protoncli import OWNER_MARKER, ProtonCli, entries, node_result, parse_json
+from protondrive.models import RemoteEntry, auth_status
+from protondrive.protoncli import OWNER_MARKER, ProtonCli, entries, load_owner_id, node_result, parse_json
 
 
 class ProtonTests(unittest.TestCase):
+    def test_failed_probe_clears_stale_account_without_changing_signed_out(self):
+        config, _ = configuration()
+        cli = ProtonCli(config)
+        cli.auth = auth_status('signed-in', email='old@example.com')
+        self.assertEqual(cli.probe_failed('Storage unavailable')['state'], 'unavailable')
+        self.assertEqual(cli.status()['email'], '')
+        cli.auth = auth_status('signed-out')
+        self.assertEqual(cli.probe_failed('Storage unavailable')['state'], 'signed-out')
+
     def test_transfer_status_tracks_each_command_and_clears_on_failure(self):
         config, _ = configuration()
         cli = ProtonCli(config)
@@ -109,7 +117,7 @@ class ProtonTests(unittest.TestCase):
         owners: tuple[object, ...] = (None, [], {}, {'email': 123, 'organization': {'name': 'unexpected'}})
         for owner in owners:
             with self.subTest(owner=owner), patch.object(cli, 'info', return_value={'uid': 'root', 'ownedBy': owner}):
-                cli.auth = {'state': 'signed-in', 'email': 'previous@example.org', 'organization': 'Previous'}
+                cli.auth = auth_status('signed-in', email='previous@example.org', organization='Previous')
                 status = cli.probe()
                 self.assertEqual(status['state'], 'signed-in')
                 self.assertEqual(status['email'], '')
@@ -120,7 +128,7 @@ class ProtonTests(unittest.TestCase):
         cli = ProtonCli(config)
 
         def changed_session(path: str) -> dict[str, JSONValue]:
-            cli.auth = {'state': 'signed-out', 'url': '', 'error': ''}
+            cli.auth = auth_status('signed-out')
             return {'uid': 'root', 'ownedBy': {'email': 'previous@example.org'}}
 
         with patch.object(cli, 'info', side_effect=changed_session):

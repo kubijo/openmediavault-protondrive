@@ -7,11 +7,9 @@ import time
 from pathlib import Path
 
 if __package__:
-    from .guest_support import decode, integer, items, mapping, run
+    from .guest_support import ProtonDriveRpc, decode, integer, run
 else:
-    from guest_support import decode, integer, items, mapping, run
-
-from omv_guest import rpc
+    from guest_support import ProtonDriveRpc, decode, integer, run
 
 STATE = Path('/var/lib/openmediavault-protondrive')
 REMOTE = STATE / 'proton/fake-remote/my-files'
@@ -19,7 +17,7 @@ BINARY = Path('/usr/lib/openmediavault-protondrive/proton-drive')
 BACKUP = 'omv-protondrive-backup.service'
 
 
-def configure():
+def configure() -> None:
     data = Path('/data/fixture')
     data.mkdir(parents=True)
     (data / 'database').mkdir()
@@ -29,17 +27,16 @@ def configure():
     os.setxattr(data / 'database/content', 'user.backup-test', b'preserved')
     (data / 'cache').mkdir()
     (data / 'cache/ignored').touch()
-    sets = rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'})['data']
-    for raw in items(sets):
-        item = mapping(raw)
+    rpc = ProtonDriveRpc()
+    for item in rpc.list_sets():
         item['enable'] = item['name'] == 'appData'
         if item['enable']:
             item.update(paths=str(data), excludes='cache', localkeep=1, remotekeep=1)
-        rpc('setSet', item)
+        rpc.save_set(item)
     run('omv-salt', 'deploy', 'run', 'protondrive')
 
 
-def run_backup():
+def run_backup() -> None:
     completion = STATE / 'backup-completion.json'
     previous = integer(decode(completion.read_text())['generation']) if completion.exists() else 0
     subprocess.run(['systemctl', 'reset-failed', BACKUP], check=False)
@@ -51,7 +48,7 @@ def run_backup():
     assert recorded['timestamp'] == status['lastsuccess']
 
 
-def main():
+def main() -> None:
     if not Path('/run/protondrive-disposable-test').exists():
         raise SystemExit('Requires the disposable VM')
     configure()

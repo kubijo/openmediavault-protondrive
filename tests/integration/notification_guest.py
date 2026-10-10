@@ -7,9 +7,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 if __package__:
-    from .guest_support import decode_value, items, mapping, run, string
+    from .guest_support import debian_package_name, decode_value, items, mapping, run, string
 else:
-    from guest_support import decode_value, items, mapping, run, string
+    from guest_support import debian_package_name, decode_value, items, mapping, run, string
 
 STATE = Path('/var/lib/openmediavault-protondrive')
 MONIT_CONFIG = Path('/etc/monit/conf.d/openmediavault-protondrive.conf')
@@ -46,6 +46,7 @@ def monitoring(enabled: bool) -> bool:
 def main(package: Path) -> None:
     if not Path('/run/protondrive-disposable-test').exists():
         raise SystemExit('Requires a disposable VM')
+    name = debian_package_name(package)
     if mapping(rpc('EmailNotification', 'get'))['enable']:
         raise RuntimeError('Notification lifecycle tests require external email delivery to be disabled')
     initial = events()
@@ -66,7 +67,7 @@ def main(package: Path) -> None:
     run('monit', '-t')
     run('monit', '-g', 'protondrive', 'unmonitor')
     wait_for(lambda: monitoring(False))
-    run('/var/lib/dpkg/info/openmediavault-protondrive.postinst', 'abort-upgrade')
+    run(f'/var/lib/dpkg/info/{name}.postinst', 'abort-upgrade')
     wait_for(lambda: monitoring(True))
     print('PASS: distinct opt-in notification events and preferences retained across upgrade', flush=True)
 
@@ -74,7 +75,7 @@ def main(package: Path) -> None:
     assert not recovery.exists() and not recovery.is_symlink()
     recovery.symlink_to(STATE / 'missing-recovery-evidence')
     try:
-        result = run('dpkg', '--remove', 'openmediavault-protondrive', check=False, capture_output=True, text=True)
+        result = run('dpkg', '--remove', name, check=False, capture_output=True, text=True)
         assert result.returncode != 0 and 'symlink' in result.stderr + result.stdout
         assert recovery.is_symlink(), 'Failed removal discarded recovery evidence'
         assert monitoring(True), 'Failed recovery disabled monitoring'
@@ -103,13 +104,13 @@ def main(package: Path) -> None:
     wait_for(removed)
     MONIT_CONFIG.write_bytes(configuration)
     MONIT_CONFIG.chmod(0o600)
-    run('dpkg', '--remove', 'openmediavault-protondrive')
+    run('dpkg', '--remove', name)
     assert not MONIT_CONFIG.exists()
 
     wait_for(removed)
     run('monit', '-t')
     assert evidence.read_text() == 'Disposable retention assertion\n'
-    run('dpkg', '--purge', 'openmediavault-protondrive')
+    run('dpkg', '--purge', name)
     assert evidence.exists(), 'Purge removed backup/recovery evidence'
     assert not Path('/etc/openmediavault/protondrive.json').exists()
     print('PASS: failed recovery blocks removal; clean removal unregisters monitoring and retains evidence', flush=True)

@@ -5,9 +5,11 @@ import re
 import sys
 import traceback
 from collections.abc import Callable
+from pathlib import Path
 from types import TracebackType
 
 from rich.console import Console
+from rich.style import Style
 from rich.text import Text
 from rich.traceback import install as install_rich_traceback
 
@@ -44,6 +46,11 @@ def new_console(*, stderr: bool = False, no_color: bool = False, in_clanker: boo
         highlight=False,
         markup=False,
     )
+
+
+def path_text(path: Path, console: Console) -> Text:
+    link = path.resolve().as_uri() if console.is_terminal and console.color_system and not console.no_color else None
+    return Text(str(path), style=Style(color='blue', link=link))
 
 
 def live_output(console: Console, *, no_color: bool = False, in_clanker: bool = False) -> bool:

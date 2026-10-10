@@ -3,6 +3,7 @@
   python,
   src,
   package,
+  packageMeta,
   guestBundle,
   mode ? "test",
 }:
@@ -28,7 +29,7 @@ let
       "--image"
       "${image}"
       "--package"
-      "${package}/openmediavault-protondrive_7.0.0_amd64.deb"
+      "${package}/${packageMeta.fileName}"
     ]
     ++ pkgs.lib.optionals (mode != "command") [
       "--guest-bundle"

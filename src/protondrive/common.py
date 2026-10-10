@@ -9,11 +9,11 @@ import tempfile
 import time
 from collections.abc import Generator
 from pathlib import Path
-from typing import Literal, overload
+from typing import Literal, cast, overload
 
 from . import records
 from .json_data import JSONValue, decode, object_value
-from .models import Manifest, RemoteEntry, ServiceStatus
+from .models import BackendStatus, Manifest, RemoteEntry, ServiceStatus
 
 STATE = Path('/var/lib/openmediavault-protondrive')
 CONFIG = Path('/etc/openmediavault/protondrive.json')
@@ -22,8 +22,18 @@ BINARY = Path('/usr/lib/openmediavault-protondrive/proton-drive')
 LIMIT = 4 * 1024 * 1024
 
 
+FailureCode = Literal['failed_precondition', 'sign_in_required', 'unavailable', 'busy', 'invalid_archive', 'internal']
+FAILURE_CODES = frozenset(
+    {'failed_precondition', 'sign_in_required', 'unavailable', 'busy', 'invalid_archive', 'internal'}
+)
+
+
 class BackupError(Exception):
     """An actionable backup failure safe to present to the administrator."""
+
+    def __init__(self, message: str, *, code: FailureCode = 'failed_precondition') -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def atomic_json(path: str | Path, value: object, mode: int = 0o600, *, owner: tuple[int, int] | None = None) -> None:
@@ -71,6 +81,10 @@ def locked(path: str | Path, *, timeout: float | None = 0) -> Generator[None, No
 
 
 @overload
+def request(operation: Literal['backend-statuses'], *, timeout: float | None = None) -> list[BackendStatus]: ...
+
+
+@overload
 def request(
     operation: Literal['status', 'probe', 'start-auth', 'cancel-auth', 'logout'],
     *,
@@ -96,22 +110,31 @@ def request(operation: str, *, timeout: float | None = None, **params: JSONValue
 
 
 def request(operation: str, *, timeout: float | None = None, **params: JSONValue) -> object:
-    with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(timeout if timeout is not None else (5 if operation == 'cancel-transfer' else 86500))
-        client.connect(str(SOCKET))
-        client.sendall(json.dumps({'operation': operation, **params}).encode() + b'\n')
-        with client.makefile('rb') as stream:
-            line = stream.readline(LIMIT + 1)
-        if len(line) > LIMIT:
-            raise BackupError('Proton service response too large')
-        result = object_value(decode(line))
-        if not result.get('ok'):
-            raise BackupError(result.get('error', 'Proton service failed'))
-        value = result['result']
-        if operation in ('status', 'probe', 'start-auth', 'cancel-auth', 'logout'):
-            return records.service_status(value)
-        if operation in ('prepare', 'browse'):
-            return records.listing(value)
-        if operation in ('upload', 'download-archive'):
-            return records.manifest(value)
-        return value
+    try:
+        with socket.socket(socket.AF_UNIX) as client:
+            client.settimeout(timeout if timeout is not None else (5 if operation == 'cancel-transfer' else 86500))
+            client.connect(str(SOCKET))
+            client.sendall(json.dumps({'operation': operation, **params}).encode() + b'\n')
+            with client.makefile('rb') as stream:
+                line = stream.readline(LIMIT + 1)
+    except OSError as exc:
+        raise BackupError('Proton service is unavailable; retry after it starts', code='unavailable') from exc
+    if len(line) > LIMIT:
+        raise BackupError('Proton service response too large', code='unavailable')
+    result = object_value(decode(line))
+    if not result.get('ok'):
+        message = result.get('error')
+        code = result.get('code')
+        if not isinstance(message, str) or not isinstance(code, str) or code not in FAILURE_CODES:
+            raise BackupError('Proton service returned an invalid error', code='internal')
+        raise BackupError(message, code=cast(FailureCode, code))
+    value = result['result']
+    if operation in ('status', 'probe', 'start-auth', 'cancel-auth', 'logout'):
+        return records.service_status(value)
+    if operation == 'backend-statuses':
+        return records.backend_statuses(value)
+    if operation in ('prepare', 'browse'):
+        return records.listing(value)
+    if operation in ('upload', 'download-archive'):
+        return records.manifest(value)
+    return value

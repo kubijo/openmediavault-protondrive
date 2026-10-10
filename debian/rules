@@ -2,7 +2,7 @@
 
 .PHONY: build binary binary-arch binary-indep clean
 build:
-	nix build .\#openmediavault-protondrive
+	nix build .\#default
 
 binary: binary-arch
 

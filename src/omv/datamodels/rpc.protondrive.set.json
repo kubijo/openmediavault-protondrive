@@ -33,6 +33,10 @@
         "default": "/my-files/open-media-vault-proton-backup",
         "required": true
       },
+      "destinations": {
+        "type": "string",
+        "default": ""
+      },
       "instanceuuid": {
         "type": "string",
         "format": "uuidv4",

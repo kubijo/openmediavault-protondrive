@@ -39,6 +39,32 @@ message GetStatusResponse {
   uint64 transfer_elapsed_seconds = 11;
   bool pending_configuration = 12;
   string account_error = 13;
+  string error_code = 14;
+  string started_at = 15;
+  repeated BackendStatus backends = 16;
+}
+
+message BackendStatus {
+  string id = 1;
+  string kind = 2;
+  string name = 3;
+  bool enabled = 4;
+  string state = 5;
+  string email = 6;
+  string authentication_url = 7;
+  string error = 8;
+  string transfer_phase = 9;
+  string transfer_file = 10;
+  uint64 transfer_elapsed_seconds = 11;
+  optional uint32 transfer_percent = 12 [(buf.validate.field).uint32.lte = 100];
+}
+
+message Destination {
+  string id = 1 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}$"];
+  string kind = 2 [(buf.validate.field).string.min_len = 1];
+  string name = 3 [(buf.validate.field).string.min_len = 1];
+  bool enabled = 4;
+  string root = 5 [(buf.validate.field).string.min_len = 1];
 }
 
 message Configuration {
@@ -61,6 +87,7 @@ message Configuration {
   }];
   string staging_path = 9 [(buf.validate.field).string.prefix = "/"];
   string remote_path = 10 [(buf.validate.field).string.pattern = "^/my-files/[^/]+$"];
+  repeated Destination destinations = 11 [(buf.validate.field).repeated.min_items = 1];
 }
 message GetConfigurationRequest {}
 message GetConfigurationResponse {
@@ -92,6 +119,13 @@ message BackupSet {
   }];
   repeated string container_ids = 9 [(buf.validate.field).repeated.items.string.pattern = "^[a-f0-9]{64}$"];
   repeated string compose_projects = 10 [(buf.validate.field).repeated.items.string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
+  repeated ComposeApplication compose_applications = 11;
+}
+message ComposeApplication {
+  string project = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
+  repeated string definitions = 2 [(buf.validate.field).repeated.min_items = 1];
+  repeated string env_files = 3;
+  repeated string secret_files = 4;
 }
 message ListSetsRequest {}
 message ListSetsResponse {
@@ -138,6 +172,7 @@ message Job {
   JobState state = 3;
   string message = 4;
   uint64 sequence = 5;
+  string failure_code = 6;
 }
 message StartOperationRequest {
   Operation operation = 1 [(buf.validate.field).enum = {
@@ -149,6 +184,7 @@ message StartOperationRequest {
     ArchiveReference inspect_archive = 3;
     FileExtraction extract_files = 4;
   }
+  string destination_id = 5;
 }
 message StartOperationResponse {
   Job job = 1;
@@ -193,6 +229,7 @@ message ListContainersResponse {
 message BrowseBackupsRequest {
   optional string instance_id = 1 [(buf.validate.field).string.uuid = true];
   optional string set_id = 2 [(buf.validate.field).string.uuid = true];
+  string destination_id = 3;
 }
 message BackupEntry {
   string name = 1;
@@ -209,6 +246,7 @@ message ArchiveReference {
   string instance_id = 1 [(buf.validate.field).string.uuid = true];
   string set_id = 2 [(buf.validate.field).string.uuid = true];
   string name = 3 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}-[0-9]{8}T[0-9]{4}Z\\.tar\\.zst$"];
+  string destination_id = 4;
 }
 message FileExtraction {
   string inspection_id = 1 [(buf.validate.field).string.uuid = true];
@@ -243,6 +281,26 @@ message GetArchiveResponse {
   repeated ArchiveMember members = 1;
   uint32 total = 2;
   uint32 next_offset = 3;
+  repeated ComposeProjectSnapshot compose = 4;
+}
+message ComposeProjectSnapshot {
+  string project = 1;
+  repeated string definitions = 2;
+  repeated string env_files = 3;
+  repeated string secret_files = 4;
+  repeated ComposeServiceSnapshot services = 5;
+}
+message ComposeServiceSnapshot {
+  string service = 1;
+  string image = 2;
+  string pinned = 3;
+  uint32 replicas = 4;
+  repeated ComposeBindSnapshot binds = 5;
+}
+message ComposeBindSnapshot {
+  string source = 1;
+  string target = 2;
+  bool read_only = 3;
 }
 
 message CancelJobRequest {
@@ -325,4 +383,7 @@ message JobEvents {
 message BrokerError {
   string code = 1;
   string message = 2;
+}
+message FailureDetail {
+  string code = 1;
 }

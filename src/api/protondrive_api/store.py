@@ -24,6 +24,7 @@ class JobRecord(Base):
     operation: Mapped[int]
     state: Mapped[int]
     message: Mapped[str]
+    failure_code: Mapped[str] = mapped_column(String(32), default='')
     sequence: Mapped[int]
     created_at: Mapped[str]
     parameters: Mapped[bytes | None]
@@ -37,6 +38,7 @@ class EventRecord(Base):
     operation: Mapped[int]
     state: Mapped[int]
     message: Mapped[str]
+    failure_code: Mapped[str] = mapped_column(String(32), default='')
     sequence: Mapped[int]
 
 
@@ -59,6 +61,7 @@ def message(record: JobRecord | EventRecord) -> wire.Job:
         operation=wire.Operation.ValueType(record.operation),
         state=wire.JobState.ValueType(record.state),
         message=record.message,
+        failure_code=record.failure_code,
         sequence=record.sequence,
     )
 
@@ -122,6 +125,7 @@ class Store:
                 operation=request.operation,
                 state=wire.JOB_STATE_QUEUED,
                 message='Queued',
+                failure_code='',
                 sequence=1,
                 created_at=datetime.now(UTC).isoformat(),
                 parameters=parameters,
@@ -134,6 +138,7 @@ class Store:
                     operation=record.operation,
                     state=record.state,
                     message=record.message,
+                    failure_code='',
                     sequence=record.sequence,
                 )
             )
@@ -158,7 +163,13 @@ class Store:
             return message(record)
 
     def update(
-        self, identifier: str, state: wire.JobState.ValueType, detail: str, *, clear_publication: bool = False
+        self,
+        identifier: str,
+        state: wire.JobState.ValueType,
+        detail: str,
+        *,
+        failure_code: str = '',
+        clear_publication: bool = False,
     ) -> wire.Job:
         with Session(self.engine) as session, session.begin():
             record = session.get(JobRecord, identifier)
@@ -167,6 +178,7 @@ class Store:
             record.sequence += 1
             record.state = state
             record.message = detail
+            record.failure_code = failure_code
             if clear_publication:
                 publication = session.get(PublicationRecord, identifier)
                 if publication is not None:
@@ -177,6 +189,7 @@ class Store:
                     operation=record.operation,
                     state=state,
                     message=detail,
+                    failure_code=failure_code,
                     sequence=record.sequence,
                 )
             )

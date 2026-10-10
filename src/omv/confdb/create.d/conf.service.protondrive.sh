@@ -11,6 +11,7 @@ if ! omv_config_exists "$base"; then
     omv_config_add_key "$base" scheduleminute 0
     omv_config_add_key "$base" stagingpath /data/.omv-protondrive
     omv_config_add_key "$base" remotepath '/my-files/open-media-vault-proton-backup'
+    omv_config_add_key "$base" destinations ''
     omv_config_add_key "$base" instanceuuid "$(cat /proc/sys/kernel/random/uuid)"
     omv_config_add_key "$base" minimumfreebytes 1073741824
     omv_config_add_key "$base" containerstoptimeout 120

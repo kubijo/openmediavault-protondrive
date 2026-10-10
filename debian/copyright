@@ -1,5 +1,5 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: openmediavault-protondrive
+Upstream-Name: openmediavault-cloud-backup
 
 Files: *
 Copyright: 2026 OMV Proton Drive contributors

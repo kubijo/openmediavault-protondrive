@@ -117,7 +117,10 @@ async function exerciseLockedEdits(
             failure =
                 failure === undefined
                     ? error
-                    : new AggregateError([failure, error], 'UI edit test and restoration both failed');
+                    : new AggregateError(
+                          [failure, error],
+                          `UI edit failed: ${String(failure)}; restoration failed: ${String(error)}`,
+                      );
         }
     }
     if (failure !== undefined) throw failure;

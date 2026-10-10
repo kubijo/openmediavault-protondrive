@@ -21,7 +21,8 @@ checks are separate from hermetic validation.
 The suite asserts UI backup and selected-file restore, metadata, destination-collision refusal, cache release,
 cancellation, controller crash, separate-process recovery, foreign browsing and corrupt-lock repair. It also checks
 1440/420/320px layouts, RPC authentication, settings/set edits and Apply, snapshot/restore/reset identities, and service
-installation, notifications and container recovery in a separate clean overlay.
+installation, notifications and container recovery in a separate clean overlay. Failure checks isolate a Proton outage,
+signed-out CLI, concurrent browse and corrupt archive, then match an internal error reference to the controller journal.
 
 | Layer            | Invalidated by                             | Isolation                       |
 | ---------------- | ------------------------------------------ | ------------------------------- |

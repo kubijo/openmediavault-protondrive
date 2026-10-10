@@ -110,7 +110,8 @@ def test_cancel_cleanup_failure_remains_visible_and_retries_after_restart(tmp_pa
         result = controller.store.get(request.request_id)
         assert result.state == wire.JOB_STATE_INTERRUPTED
         assert 'Recovery requires attention' in result.message
-        assert 'Injected cleanup failure' in result.message
+        assert request.request_id in result.message
+        assert 'Injected cleanup failure' not in result.message
         assert controller.store.publication(request.request_id) is not None
         assert len(list(tmp_path.glob('.protondrive-extract-*'))) == 1
     finally:
@@ -163,7 +164,8 @@ def test_unresolved_terminal_publication_survives_repeated_recovery(
         with patch('protondrive_api.archives.reconcile', side_effect=OSError('Filesystem still unavailable')):
             Archives(reopened, tmp_path / 'cache').recover()
         assert reopened.get(request.request_id).state == wire.JOB_STATE_INTERRUPTED
-        assert 'Filesystem still unavailable' in reopened.get(request.request_id).message
+        assert request.request_id in reopened.get(request.request_id).message
+        assert 'Filesystem still unavailable' not in reopened.get(request.request_id).message
         assert reopened.publication(request.request_id) is not None
     finally:
         reopened.close()

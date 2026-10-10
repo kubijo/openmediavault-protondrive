@@ -52,12 +52,17 @@ def observe(check: Check) -> Observation:
     """Return failure, health, or an inconclusive observation that retains the last result."""
     if check in ('service', 'auth'):
         try:
-            auth = request('status', timeout=5)
+            if check == 'service':
+                request('status', timeout=5)
+                return Observation(False)
+            backends = request('backend-statuses', timeout=5)
         except (BackupError, OSError, ValueError, TypeError, KeyError):
             # A dead daemon is reported by the service check, not as a sign-in failure
             # or a spurious recovery of an existing authentication incident.
             return Observation(True if check == 'service' else None)
-        return Observation(False if check == 'service' else auth['state'] != 'signed-in')
+        if not backends:
+            return Observation(True)
+        return Observation(any(backend['enable'] and backend['state'] != 'signed-in' for backend in backends))
 
     unit = unit_status('omv-protondrive-backup.service')
     observation = observe_backup(check, unit)

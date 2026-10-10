@@ -41,29 +41,57 @@ export function Archive(): ReactElement {
     });
     return (
         <Stack>
-            <Title order={1}>Extract files</Title>
+            <Title order={1} children="Extract files" />
             <Button
                 variant="default"
                 loading={release.isPending}
                 onClick={() => release.mutate({ inspectionId: id ?? '' })}
-            >
-                Release local copy
-            </Button>
+                children="Release local copy"
+            />
             {archive.data && (
-                <Alert color="blue" title="Verified archive">
-                    The downloaded archive matches its completion manifest. Extraction creates a new directory and
-                    preserves the archived paths beneath it. It never replaces the running system or existing files.
-                </Alert>
+                <Alert
+                    color="blue"
+                    title="Verified archive"
+                    children="The downloaded archive matches its completion manifest. Extraction creates a new directory and preserves the archived paths beneath it. It never replaces the running system or existing files."
+                />
             )}
             <Failure error={archive.error ?? preview.error ?? extraction.error ?? release.error} />
             {!archive.data && !archive.error && <Loading />}
-            <Text>
-                Directories include their contents. Required parent directories and hard-link targets are included.
-            </Text>
+            {archive.data?.compose.map(project => (
+                <Paper withBorder p="md" key={project.project}>
+                    <Stack gap="xs">
+                        <Title order={2}>Compose project: {project.project}</Title>
+                        <Text size="sm">Definitions: {project.definitions.join(', ')}</Text>
+                        {project.envFiles.length > 0 && (
+                            <Text size="sm">Environment files: {project.envFiles.join(', ')}</Text>
+                        )}
+                        {project.secretFiles.length > 0 && (
+                            <Text size="sm">Secret files: {project.secretFiles.join(', ')}</Text>
+                        )}
+                        {project.services.map(service => (
+                            <Paper withBorder p="sm" key={service.service}>
+                                <Text fw={600}>
+                                    {service.service} · {service.replicas} replica(s)
+                                </Text>
+                                <Text size="sm">
+                                    Pinned image: <Code children={service.pinned} />
+                                </Text>
+                                {service.binds.map(bind => (
+                                    <Text size="sm" key={`${bind.source}:${bind.target}`}>
+                                        Bind: <Code children={bind.source} /> → <Code children={bind.target} />
+                                        {bind.readOnly ? ' (read only)' : ''}
+                                    </Text>
+                                ))}
+                            </Paper>
+                        ))}
+                    </Stack>
+                </Paper>
+            ))}
+            <Text children="Directories include their contents. Required parent directories and hard-link targets are included." />
             {archive.data?.members.map(entry => (
                 <Paper withBorder p="sm" key={entry.path}>
                     <Checkbox
-                        label={<Code>{entry.path}</Code>}
+                        label={<Code children={entry.path} />}
                         checked={paths.includes(entry.path)}
                         disabled={entry.issue !== ''}
                         onChange={event => {
@@ -79,16 +107,19 @@ export function Archive(): ReactElement {
                     </Text>
                     {entry.linkTarget && (
                         <Text size="sm">
-                            Target: <Code>{entry.linkTarget}</Code>
+                            Target: <Code children={entry.linkTarget} />
                         </Text>
                     )}
-                    {entry.issue && <Text c="yellow">{entry.issue}</Text>}
+                    {entry.issue && <Text c="yellow" children={entry.issue} />}
                 </Paper>
             ))}
             <Group>
-                <Button variant="default" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>
-                    Previous entries
-                </Button>
+                <Button
+                    variant="default"
+                    disabled={offset === 0}
+                    onClick={() => setOffset(Math.max(0, offset - 100))}
+                    children="Previous entries"
+                />
                 <Text>
                     {archive.data?.total ?? 0} entries · {paths.length} selected
                 </Text>
@@ -96,9 +127,8 @@ export function Archive(): ReactElement {
                     variant="default"
                     disabled={!archive.data?.nextOffset}
                     onClick={() => setOffset(archive.data?.nextOffset ?? 0)}
-                >
-                    Next entries
-                </Button>
+                    children="Next entries"
+                />
             </Group>
             <form
                 onSubmit={event => {
@@ -126,24 +156,23 @@ export function Archive(): ReactElement {
                         type="submit"
                         disabled={!paths.length || paths.length > 1000 || !archive.data}
                         loading={preview.isPending}
-                    >
-                        Preview extraction
-                    </Button>
+                        children="Preview extraction"
+                    />
                 </Stack>
             </form>
             {selection && preview.data && (
                 <Paper withBorder p="md">
                     <Stack>
-                        <Title order={2}>Extraction preview</Title>
-                        <Code>{preview.data.destination}</Code>
+                        <Title order={2} children="Extraction preview" />
+                        <Code children={preview.data.destination} />
                         <Text>
                             {preview.data.entries} entries · {preview.data.requiredBytes.toString()} bytes required
                         </Text>
                         {preview.data.includedDependencies.length > 0 && (
                             <>
-                                <Text>Also included to preserve directories and hard links:</Text>
+                                <Text children="Also included to preserve directories and hard links:" />
                                 {preview.data.includedDependencies.map(path => (
-                                    <Code key={path}>{path}</Code>
+                                    <Code key={path} children={path} />
                                 ))}
                             </>
                         )}
@@ -163,9 +192,8 @@ export function Archive(): ReactElement {
                                     },
                                 );
                             }}
-                        >
-                            Extract selected files
-                        </Button>
+                            children="Extract selected files"
+                        />
                     </Stack>
                 </Paper>
             )}

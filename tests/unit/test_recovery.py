@@ -1,10 +1,10 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from protondrive.common import BackupError
+from protondrive.json_data import decode, object_value
 from protondrive.recovery import Recovery
 
 A, B = 'a' * 64, 'b' * 64
@@ -25,7 +25,7 @@ class RecoveryTests(unittest.TestCase):
         if args[0] == 'inspect':
             return str(self.running[args[-1]]).lower()
         if args[0] == 'stop':
-            self.assertEqual(json.loads((self.state / 'recovery.json').read_text())['ids'], [A, B])
+            self.assertEqual(object_value(decode((self.state / 'recovery.json').read_text()))['ids'], [A, B])
             self.running[args[-1]] = False
         if args[0] == 'start':
             self.running[args[-1]] = True
@@ -49,6 +49,7 @@ class RecoveryTests(unittest.TestCase):
     def test_only_previously_running_containers_restarted(self):
         recovery = Recovery(self.state, self.docker)
         recovery.stop(120)
+        self.assertNotIn('stop_deadline', object_value(decode(recovery.path.read_text())))
         self.assertFalse(self.running[A])
         recovery.restore()
         self.assertTrue(self.running[A])
@@ -81,5 +82,5 @@ class RecoveryTests(unittest.TestCase):
 
         with self.assertRaises(BackupError):
             Recovery(self.state, fail).restore()
-        self.assertEqual(json.loads(recovery.path.read_text())['ids'], [B])
+        self.assertEqual(object_value(decode(recovery.path.read_text()))['ids'], [B])
         Recovery(self.state, self.docker).restore()

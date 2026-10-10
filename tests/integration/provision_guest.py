@@ -43,15 +43,16 @@ def provision(dependencies: Path):
     print('PASS: provisioned plugin-free OMV base', flush=True)
 
 
-def seal():
-    installed = subprocess.run(
-        ['dpkg-query', '-W', '-f=${db:Status-Status}', 'openmediavault-protondrive'],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if installed.stdout.strip() == 'installed':
-        raise RuntimeError('Refusing to cache a base containing the plugin')
+def seal(package_name: str):
+    for name in ('openmediavault-protondrive', package_name):
+        installed = subprocess.run(
+            ['dpkg-query', '-W', '-f=${db:Status-Status}', name],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if installed.stdout.strip() == 'installed':
+            raise RuntimeError('Refusing to cache a base containing the plugin')
     seal_identity()
 
 
@@ -84,12 +85,12 @@ def seal_identity() -> None:
 def main():
     if not Path('/run/protondrive-disposable-test').exists():
         raise SystemExit('Run using the disposable VM harness')
-    if sys.argv[1:] == ['--seal']:
-        seal()
+    if len(sys.argv) == 3 and sys.argv[1] == '--seal':
+        seal(sys.argv[2])
     elif len(sys.argv) == 2:
         provision(Path(sys.argv[1]))
     else:
-        raise SystemExit('Expected a dependency file or --seal')
+        raise SystemExit('Expected a dependency file or --seal PACKAGE')
 
 
 if __name__ == '__main__':

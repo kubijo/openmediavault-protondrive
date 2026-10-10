@@ -8,6 +8,7 @@ import socket
 import socketserver
 import sys
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import cast
@@ -61,7 +62,7 @@ class Controller:
             elif job.operation == wire.OPERATION_EXTRACT_FILES:
                 self.archives.extract(job.id, parameters.extract_files, progress, control)
             else:
-                self.omv.operation(actor, job.operation, progress)
+                self.omv.operation(actor, job.operation, progress, parameters.destination_id)
         except Cancelled:
             if job.operation == wire.OPERATION_EXTRACT_FILES:
                 self.archives.resolve_extraction(job.id, wire.JOB_STATE_CANCELLED, 'Cancelled; no files published')
@@ -69,15 +70,17 @@ class Controller:
                 self.store.update(job.id, wire.JOB_STATE_CANCELLED, 'Cancelled; no files published')
         except Exception as exc:
             logger.exception('Operation %s failed', job.id)
+            message = str(exc) if isinstance(exc, BackupError) else f'Operation failed; reference {job.id}'
+            failure_code = exc.code if isinstance(exc, BackupError) else 'internal'
             if job.operation == wire.OPERATION_EXTRACT_FILES:
-                self.archives.resolve_extraction(job.id, wire.JOB_STATE_FAILED, str(exc))
+                self.archives.resolve_extraction(job.id, wire.JOB_STATE_FAILED, message, failure_code)
             else:
                 try:
                     control.check()
                 except Cancelled:
                     self.store.update(job.id, wire.JOB_STATE_CANCELLED, 'Cancelled; no files published')
                 else:
-                    self.store.update(job.id, wire.JOB_STATE_FAILED, str(exc))
+                    self.store.update(job.id, wire.JOB_STATE_FAILED, message, failure_code=failure_code)
         else:
             self.store.update(
                 job.id,
@@ -172,7 +175,13 @@ class Controller:
         except LookupError:
             return wire.BrokerResponse(error=wire.BrokerError(code='not_found', message='Job not found'))
         except BackupError as exc:
-            return wire.BrokerResponse(error=wire.BrokerError(code='failed_precondition', message=str(exc)))
+            return wire.BrokerResponse(error=wire.BrokerError(code=exc.code, message=str(exc)))
+        except Exception:
+            reference = uuid.uuid4().hex[:12]
+            logger.exception('Controller operation failed; reference %s', reference)
+            return wire.BrokerResponse(
+                error=wire.BrokerError(code='internal', message=f'Controller operation failed; reference {reference}')
+            )
 
     def close(self) -> None:
         self.jobs.shutdown(wait=True)
@@ -203,10 +212,11 @@ def serve(path: Path = SOCKET) -> None:
                 try:
                     response = controller.respond(wire.BrokerRequest.FromString(read_frame(connection)))
                 except Exception:
-                    logger.exception('Controller operation failed')
+                    reference = uuid.uuid4().hex[:12]
+                    logger.exception('Controller request failed; reference %s', reference)
                     response = wire.BrokerResponse(
                         error=wire.BrokerError(
-                            code='internal', message='Controller operation failed; inspect the service journal'
+                            code='internal', message=f'Controller request failed; reference {reference}'
                         )
                     )
                 write_frame(connection, response.SerializeToString())

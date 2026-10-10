@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+from typing import cast
 
 from .common import STATE, BackupError, locked, request
 from .config import load, validate
@@ -13,9 +14,14 @@ from .health import CHECKS, Check, check_health
 from .json_data import JSONValue, decode, object_value
 from .models import ServiceStatus
 from .monitoring import set_monitoring
+from .records import service_status
 from .recovery import Recovery
 
 UNIT = 'omv-protondrive-backup.service'
+
+
+def unavailable_status(message: str) -> ServiceStatus:
+    return service_status({'state': 'unavailable', 'url': '', 'error': message})
 
 
 def active() -> bool:
@@ -57,6 +63,7 @@ def recover() -> None:
 class Arguments(argparse.Namespace):
     command: str = ''
     check: Check | None = None
+    destination_id: str = ''
 
 
 def main() -> None:
@@ -84,6 +91,7 @@ def main() -> None:
         ],
     )
     parser.add_argument('check', nargs='?', choices=CHECKS)
+    parser.add_argument('--destination-id', default='')
     args = parser.parse_args(namespace=Arguments())
     if (args.command == 'health') != (args.check is not None):
         parser.error('health requires a check; other commands do not accept one')
@@ -117,27 +125,26 @@ def main() -> None:
         print('true')
     elif args.command in ('status', 'auth-status'):
         try:
-            auth: ServiceStatus = request('status')
-        except (BackupError, OSError, ValueError, TypeError):
-            auth = {
-                'state': 'unavailable',
-                'url': '',
-                'error': 'Apply the plugin configuration to start the Proton service',
-                'email': '',
-                'organization': '',
-                'transferphase': '',
-                'transferfile': '',
-                'transferelapsed': 0,
-            }
+            auth: ServiceStatus = (
+                request('status', destinationid=args.destination_id) if args.destination_id else request('status')
+            )
+        except BackupError as exc:
+            auth = unavailable_status(str(exc))
+        except (OSError, ValueError, TypeError):
+            auth = unavailable_status('Apply the plugin configuration to start the Proton service')
         value: dict[str, JSONValue] = {
             'authstate': auth['state'],
             'authurl': auth['url'],
             'autherror': auth['error'],
-            'accountemail': auth.get('email', ''),
-            'accountorganization': auth.get('organization', ''),
+            'accountemail': auth['email'],
+            'accountorganization': auth['organization'],
         }
         if args.command == 'status':
-            value.update(phase='idle', lastsuccess='', error='', sets={})
+            try:
+                value['backends'] = cast(JSONValue, request('backend-statuses'))
+            except (BackupError, OSError, ValueError, TypeError):
+                value['backends'] = []
+            value.update(phase='idle', lastsuccess='', error='', errorcode='', started='', sets={})
             if (STATE / 'status.json').exists():
                 value.update(object_value(decode((STATE / 'status.json').read_text())))
             value['running'] = active()
@@ -147,6 +154,8 @@ def main() -> None:
                 value['phase'] = 'recovery-required'
             elif not value['running'] and value['phase'] in (
                 'preflight',
+                'capturing-compose',
+                'pulling-compose-images',
                 'stopping-containers',
                 'archiving',
                 'recovering-containers',
@@ -157,15 +166,18 @@ def main() -> None:
             ):
                 value['phase'] = 'interrupted'
             value.update(
-                transferphase=auth.get('transferphase', '') if value['running'] else '',
-                transferfile=auth.get('transferfile', '') if value['running'] else '',
-                transferelapsed=auth.get('transferelapsed', 0) if value['running'] else 0,
+                transferphase=auth['transferphase'] if value['running'] else '',
+                transferfile=auth['transferfile'] if value['running'] else '',
+                transferelapsed=auth['transferelapsed'] if value['running'] else 0,
             )
             value['details'] = json.dumps(value.get('sets', {}), indent=2)
         print(json.dumps(value))
     else:
         idle()
-        print(json.dumps(request(args.command)))
+        result = (
+            request(args.command, destinationid=args.destination_id) if args.destination_id else request(args.command)
+        )
+        print(json.dumps(result))
 
 
 if __name__ == '__main__':

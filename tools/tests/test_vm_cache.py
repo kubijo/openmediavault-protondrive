@@ -232,7 +232,7 @@ class OrchestrationTests(unittest.TestCase):
             patch.object(provision.os, 'sync'),
             contextlib.redirect_stdout(io.StringIO()),
         ):
-            provision.seal()
+            provision.seal('sample-plugin')
         self.assertFalse((self.root / 'root/.ssh/authorized_keys').exists())
         self.assertFalse((self.root / 'etc/ssh/ssh_host_ed25519_key').exists())
         self.assertEqual((self.root / 'etc/machine-id').read_text(), 'uninitialized\n')

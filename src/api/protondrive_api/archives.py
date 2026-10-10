@@ -1,11 +1,13 @@
 """Read-only remote discovery and private, verified archive inspection."""
 
+import logging
 import os
 import selectors
 import shutil
 import signal
 import stat
 import subprocess
+import tarfile
 import tempfile
 import time
 from collections.abc import Callable
@@ -25,6 +27,7 @@ from .store import Store
 from .v1 import control_pb2 as wire
 
 CACHE = STATE / 'restore-cache'
+logger = logging.getLogger(__name__)
 
 
 def copy_download(source: Path, destination: Path, size: int, control: OperationControl | None = None) -> None:
@@ -39,7 +42,9 @@ def copy_download(source: Path, destination: Path, size: int, control: Operation
         with os.fdopen(fd, 'rb') as stream:
             info = os.fstat(stream.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_size != size:
-                raise BackupError('Downloaded archive is not a regular file with the declared size')
+                raise BackupError(
+                    'Downloaded archive is not a regular file with the declared size', code='invalid_archive'
+                )
             remaining = size
             with destination.open('xb') as target:
                 os.fchmod(target.fileno(), 0o600)
@@ -48,11 +53,11 @@ def copy_download(source: Path, destination: Path, size: int, control: Operation
                         control.check()
                     chunk = stream.read(min(1024 * 1024, remaining))
                     if not chunk:
-                        raise BackupError('Downloaded archive was truncated')
+                        raise BackupError('Downloaded archive was truncated', code='invalid_archive')
                     target.write(chunk)
                     remaining -= len(chunk)
                 if stream.read(1):
-                    raise BackupError('Downloaded archive exceeds its declared size')
+                    raise BackupError('Downloaded archive exceeds its declared size', code='invalid_archive')
                 target.flush()
                 os.fsync(target.fileno())
     finally:
@@ -93,7 +98,7 @@ def decompress(
                     check_space(destination.parent, len(chunk), reserve)
                     target.write(chunk)
                 if proc.wait(timeout=max(0.1, deadline - time.monotonic())):
-                    raise BackupError('Archive decompression failed')
+                    raise BackupError('Archive decompression failed', code='invalid_archive')
             target.flush()
             os.fsync(target.fileno())
         finally:
@@ -130,6 +135,7 @@ class Archives:
                 manifest = request(
                     'download-archive',
                     timeout=2 * config['transfertimeout'] + 60,
+                    **({'destinationid': value.destination_id} if value.destination_id else {}),
                     instanceuuid=value.instance_id,
                     setuuid=value.set_id,
                     jobuuid=job,
@@ -142,11 +148,31 @@ class Archives:
                 check_space(directory, manifest['size'], config['minimumfreebytes'])
                 copy_download(DOWNLOAD_CACHE / job / value.name, compressed, manifest['size'], control)
                 if digest(compressed, control.check) != manifest['sha256']:
-                    raise BackupError('Downloaded archive failed checksum verification')
+                    raise BackupError('Downloaded archive failed checksum verification', code='invalid_archive')
                 progress('Decompressing and inspecting archive paths')
                 tar = directory / 'archive.tar'
                 decompress(compressed, tar, config['minimumfreebytes'], config['transfertimeout'], control)
-                members = inspect(tar, control)
+                try:
+                    members = inspect(tar, control)
+                except BackupError as exc:
+                    raise BackupError(str(exc), code='invalid_archive') from exc
+                except tarfile.TarError as exc:
+                    raise BackupError('Archive contains invalid tar data', code='invalid_archive') from exc
+                entries = {entry.name: entry for entry in members}
+                for project in manifest.get('compose', []):
+                    for path in project['definitions'] + project['envfiles'] + project['secretfiles']:
+                        entry = entries.get(path.lstrip('/'))
+                        if entry is None or entry.kind != 'file' or entry.issue:
+                            raise BackupError(
+                                'Compose manifest refers to a missing or invalid file', code='invalid_archive'
+                            )
+                    for service in project['services']:
+                        for bind in service['binds']:
+                            entry = entries.get(bind['source'].lstrip('/'))
+                            if entry is None or entry.kind not in ('file', 'directory') or entry.issue:
+                                raise BackupError(
+                                    'Compose manifest refers to a missing bind source', code='invalid_archive'
+                                )
                 result = wire.GetArchiveResponse(
                     members=[
                         wire.ArchiveMember(
@@ -159,6 +185,32 @@ class Archives:
                         for entry in members
                     ],
                     total=len(members),
+                    compose=[
+                        wire.ComposeProjectSnapshot(
+                            project=project['project'],
+                            definitions=project['definitions'],
+                            env_files=project['envfiles'],
+                            secret_files=project['secretfiles'],
+                            services=[
+                                wire.ComposeServiceSnapshot(
+                                    service=service['service'],
+                                    image=service['image'],
+                                    pinned=service['pinned'],
+                                    replicas=service['replicas'],
+                                    binds=[
+                                        wire.ComposeBindSnapshot(
+                                            source=bind['source'],
+                                            target=bind['target'],
+                                            read_only=bind['read_only'],
+                                        )
+                                        for bind in service['binds']
+                                    ],
+                                )
+                                for service in project['services']
+                            ],
+                        )
+                        for project in manifest.get('compose', [])
+                    ],
                 )
                 with (directory / 'index.pb').open('xb') as output:
                     output.write(result.SerializeToString())
@@ -192,6 +244,7 @@ class Archives:
             members=result.members[value.offset : end],
             total=result.total,
             next_offset=end if end < result.total else 0,
+            compose=result.compose,
         )
 
     def preview(self, value: wire.FileExtraction) -> wire.PreviewExtractionResponse:
@@ -261,11 +314,11 @@ class Archives:
                 request('discard-download', timeout=5, jobuuid=job)
                 return
             except BackupError as exc:
-                if str(exc) != 'Proton service is busy' or time.monotonic() >= deadline:
+                if exc.code != 'busy' or time.monotonic() >= deadline:
                     raise
                 time.sleep(0.1)
 
-    def resolve_extraction(self, job: str, state: wire.JobState.ValueType, detail: str) -> None:
+    def resolve_extraction(self, job: str, state: wire.JobState.ValueType, detail: str, failure_code: str = '') -> None:
         """Resolve filesystem evidence before retiring its recovery journal."""
         try:
             with locked(STATE / 'run.lock'):
@@ -275,12 +328,24 @@ class Archives:
                     job,
                     wire.JOB_STATE_SUCCEEDED if completed else state,
                     'Files were published; recovery verified the destination' if completed else detail,
+                    failure_code='' if completed else failure_code,
                     clear_publication=True,
                 )
         except (OSError, ValueError, BackupError) as exc:
             # Keep the journal for another recovery attempt, including when the
             # job is already interrupted. Never hide a failed cleanup as cancel.
-            self.store.update(job, wire.JOB_STATE_INTERRUPTED, f'Recovery requires attention: {exc}; {detail}')
+            logger.exception('Extraction recovery failed for operation %s', job)
+            message = (
+                f'Recovery requires attention: {exc}; {detail}'
+                if isinstance(exc, BackupError)
+                else f'Recovery requires attention; reference {job}'
+            )
+            self.store.update(
+                job,
+                wire.JOB_STATE_INTERRUPTED,
+                message,
+                failure_code=exc.code if isinstance(exc, BackupError) else 'internal',
+            )
 
     def recover(self) -> None:
         for job in self.store.recovery_jobs():
@@ -291,6 +356,7 @@ class Archives:
                         job.id,
                         job.state if terminal else wire.JOB_STATE_INTERRUPTED,
                         job.message if terminal else 'Interrupted extraction cleaned up',
+                        job.failure_code if terminal else '',
                     )
                 elif job.operation == wire.OPERATION_INSPECT_ARCHIVE:
                     request('cancel-download', timeout=5, jobuuid=job.id)
@@ -300,7 +366,18 @@ class Archives:
                         job.id, wire.JOB_STATE_INTERRUPTED, 'Inspection interrupted; download the archive again'
                     )
             except (OSError, ValueError, BackupError) as exc:
-                self.store.update(job.id, wire.JOB_STATE_INTERRUPTED, f'Recovery requires attention: {exc}')
+                logger.exception('Archive recovery failed for operation %s', job.id)
+                message = (
+                    f'Recovery requires attention: {exc}'
+                    if isinstance(exc, BackupError)
+                    else f'Recovery requires attention; reference {job.id}'
+                )
+                self.store.update(
+                    job.id,
+                    wire.JOB_STATE_INTERRUPTED,
+                    message,
+                    failure_code=exc.code if isinstance(exc, BackupError) else 'internal',
+                )
 
     def extract(
         self,
@@ -324,6 +401,8 @@ class Archives:
 
 def browse(value: wire.BrowseBackupsRequest) -> wire.BrowseBackupsResponse:
     parameters: dict[str, JSONValue] = {}
+    if value.destination_id:
+        parameters['destinationid'] = value.destination_id
     if value.HasField('instance_id'):
         parameters['instanceuuid'] = value.instance_id
     if value.HasField('set_id'):

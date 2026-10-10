@@ -1,6 +1,10 @@
 """Exercise generated Connect routing, validation and authentication boundaries."""
 
+import base64
+from typing import cast
+
 import httpx
+import pytest
 
 from protondrive_api.service import Control
 from protondrive_api.transport import BrokerClient
@@ -16,6 +20,17 @@ class RecordingBroker(BrokerClient):
     def call(self, request: wire.BrokerRequest) -> wire.BrokerResponse:
         self.requests.append(request)
         return wire.BrokerResponse(status=wire.GetStatusResponse(phase='idle'))
+
+
+class ErrorBroker(RecordingBroker):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__()
+        self.code = code
+        self.message = message
+
+    def call(self, request: wire.BrokerRequest) -> wire.BrokerResponse:
+        self.requests.append(request)
+        return wire.BrokerResponse(error=wire.BrokerError(code=self.code, message=self.message))
 
 
 async def test_public_rpc_requires_authenticated_proxy_identity() -> None:
@@ -73,3 +88,43 @@ async def test_wrong_controller_response_cannot_report_success() -> None:
         )
         assert result.status_code == 500
         assert 'invalid response' in result.text
+
+
+@pytest.mark.parametrize(
+    ('code', 'status'),
+    [
+        ('sign_in_required', 400),
+        ('unavailable', 503),
+        ('busy', 429),
+        ('invalid_archive', 500),
+        ('failed_precondition', 400),
+    ],
+)
+async def test_actionable_failures_keep_their_connect_status(code: str, status: int) -> None:
+    app = ControlServiceASGIApplication(Control(ErrorBroker(code, 'Safe administrator action')))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://test') as client:
+        result = await client.post(
+            '/protondrive_api.v1.ControlService/GetStatus',
+            json={},
+            headers={'x-protondrive-authenticated': '1', 'x-protondrive-user': 'admin'},
+        )
+    assert result.status_code == status
+    assert 'Safe administrator action' in result.text
+    details = cast(list[dict[str, str]], result.json()['details'])
+    detail = details[0]
+    assert detail['type'] == 'protondrive_api.v1.FailureDetail'
+    encoded = detail['value']
+    failure = wire.FailureDetail.FromString(base64.b64decode(encoded + '=' * (-len(encoded) % 4)))
+    assert failure.code == code
+
+
+async def test_unknown_broker_error_code_does_not_expose_its_message() -> None:
+    app = ControlServiceASGIApplication(Control(ErrorBroker('unknown-code', 'private vendor diagnostic')))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://test') as client:
+        result = await client.post(
+            '/protondrive_api.v1.ControlService/GetStatus',
+            json={},
+            headers={'x-protondrive-authenticated': '1', 'x-protondrive-user': 'admin'},
+        )
+    assert result.status_code == 500
+    assert 'private vendor diagnostic' not in result.text

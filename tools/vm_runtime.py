@@ -1,6 +1,7 @@
 """Shared QEMU boot/provisioning helpers and the disposable OMV integration runner."""
 
 import os
+import re
 import shlex
 import signal
 import socket
@@ -25,6 +26,17 @@ from vm_cache import BaseCache, fingerprint
 
 SOURCE = Path(__file__).resolve().parents[1]
 JOB_UNIT = 'omv-protondrive-harness.service'
+
+
+def source_package_name() -> str:
+    fields = [
+        line.removeprefix('Package: ')
+        for line in (SOURCE / 'debian/control').read_text().splitlines()
+        if line.startswith('Package: ')
+    ]
+    if len(fields) != 1 or re.fullmatch(r'[a-z0-9][a-z0-9+.-]*', fields[0]) is None:
+        raise ValueError('Expected one valid Package field in debian/control')
+    return fields[0]
 
 
 @dataclass
@@ -420,7 +432,14 @@ def build_base(destination: Path, options: Options, dependencies: str, output: P
     with boot(options, options.image, output, label='base-') as guest:
         provision(guest, options, dependencies, output)
         with output.stage('Seal and shut down reusable base'):
-            guest.python(output, '/root/provision_guest.py', options.reports / 'base-seal.log', 120, '--seal')
+            guest.python(
+                output,
+                '/root/provision_guest.py',
+                options.reports / 'base-seal.log',
+                120,
+                '--seal',
+                source_package_name(),
+            )
             if guest.process is None or guest.process.wait(timeout=120) != 0:
                 raise RuntimeError('Base VM did not shut down cleanly; cache will not be published')
             run('qemu-img', 'convert', '-O', 'qcow2', str(guest.directory / 'disk.qcow2'), str(destination))

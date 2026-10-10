@@ -7,6 +7,7 @@ import {
     MultiSelect,
     NumberInput,
     Paper,
+    Select,
     Stack,
     Text,
     Textarea,
@@ -20,7 +21,11 @@ import { useState } from 'react';
 import { queryClient } from './api.ts';
 import { Failure, Loading } from './components.tsx';
 import type { BackupSet } from './generated/protondrive_api/v1/control_pb.ts';
-import { BackupSetSchema, ControlService } from './generated/protondrive_api/v1/control_pb.ts';
+import {
+    BackupSetSchema,
+    ComposeApplicationSchema,
+    ControlService,
+} from './generated/protondrive_api/v1/control_pb.ts';
 
 export function BackupSets(): ReactElement {
     const query = useQuery(ControlService.method.listSets);
@@ -33,7 +38,7 @@ export function BackupSets(): ReactElement {
     return (
         <Stack>
             <Group justify="space-between">
-                <Title order={1}>Backup sets</Title>
+                <Title order={1} children="Backup sets" />
                 <Button
                     onClick={() =>
                         setEditing({
@@ -41,36 +46,44 @@ export function BackupSets(): ReactElement {
                             revision: data.revision,
                         })
                     }
-                >
-                    Add backup set
-                </Button>
+                    children="Add backup set"
+                />
             </Group>
             <Failure error={remove.error} />
             {data.sets.map(item => (
                 <Paper key={item.id} component="section" aria-label={`Backup set ${item.name}`} withBorder p="md">
                     <Stack>
-                        <Title order={2}>{item.name}</Title>
-                        <Text>{item.paths.join(', ')}</Text>
-                        <Text>
-                            {item.stopAllContainers
-                                ? 'Stops all running containers (existing policy)'
-                                : item.containerIds.length || item.composeProjects.length
-                                  ? `Stops ${item.containerIds.length} selected containers and ${item.composeProjects.length} Compose projects`
-                                  : 'Does not stop containers'}
-                        </Text>
+                        <Title order={2} children={item.name} />
+                        <Text children={item.paths.join(', ')} />
+                        <Text
+                            children={
+                                item.stopAllContainers
+                                    ? 'Stops all running containers (existing policy)'
+                                    : item.containerIds.length || item.composeProjects.length
+                                      ? `Stops ${item.containerIds.length} selected containers and ${item.composeProjects.length} Compose projects`
+                                      : 'Does not stop containers'
+                            }
+                        />
+                        {item.composeApplications.length > 0 && (
+                            <Text>
+                                {item.composeApplications.length} Compose applications captured for reconstruction
+                            </Text>
+                        )}
                         <Group>
                             <Button
                                 variant="default"
                                 onClick={() => setEditing({ value: item, revision: data.revision })}
-                            >
-                                Edit
-                            </Button>
-                            <Button color="red" variant="outline" onClick={() => setConfirmDelete(item.id)}>
-                                Delete
-                            </Button>
+                                children="Edit"
+                            />
+                            <Button
+                                color="red"
+                                variant="outline"
+                                onClick={() => setConfirmDelete(item.id)}
+                                children="Delete"
+                            />
                             {confirmDelete === item.id && (
                                 <>
-                                    <Text>Delete this configuration? Existing archives remain.</Text>
+                                    <Text children="Delete this configuration? Existing archives remain." />
                                     <Button
                                         color="red"
                                         onClick={() => {
@@ -82,12 +95,13 @@ export function BackupSets(): ReactElement {
                                                 })
                                                 .catch(() => undefined);
                                         }}
-                                    >
-                                        Confirm deletion
-                                    </Button>
-                                    <Button variant="default" onClick={() => setConfirmDelete(undefined)}>
-                                        Keep set
-                                    </Button>
+                                        children="Confirm deletion"
+                                    />
+                                    <Button
+                                        variant="default"
+                                        onClick={() => setConfirmDelete(undefined)}
+                                        children="Keep set"
+                                    />
                                 </>
                             )}
                         </Group>
@@ -110,6 +124,7 @@ function SetEditor({
     const save = useMutation(ControlService.method.saveSet);
     const inventory = useQuery(ControlService.method.listContainers);
     const containers = inventory.data?.containers ?? [];
+    const [composeApplications, setComposeApplications] = useState(value.composeApplications);
     const form = useForm({
         defaultValues: { ...value, paths: value.paths.join('\n'), exclusions: value.exclusions.join('\n') },
         onSubmit: async ({ value: edited }) => {
@@ -119,6 +134,12 @@ function SetEditor({
                         ...edited,
                         paths: edited.paths.split('\n').filter(Boolean),
                         exclusions: edited.exclusions.split('\n').filter(Boolean),
+                        composeApplications: composeApplications.map(app => ({
+                            ...app,
+                            definitions: app.definitions.filter(Boolean),
+                            envFiles: app.envFiles.filter(Boolean),
+                            secretFiles: app.secretFiles.filter(Boolean),
+                        })),
                     },
                     revision,
                 });
@@ -137,7 +158,7 @@ function SetEditor({
             }}
         >
             <Stack>
-                <Title order={1}>{value.id ? 'Edit backup set' : 'Add backup set'}</Title>
+                <Title order={1} children={value.id ? 'Edit backup set' : 'Add backup set'} />
                 <Failure error={save.error} />
                 <Failure error={inventory.error} />
                 <form.Field name="containerIds">
@@ -176,9 +197,86 @@ function SetEditor({
                             value={field.state.value}
                             onChange={next => {
                                 field.handleChange(next);
+                                setComposeApplications(current => current.filter(app => next.includes(app.project)));
                                 if (next.length) form.setFieldValue('stopAllContainers', false);
                             }}
                         />
+                    )}
+                </form.Field>
+                <form.Field name="composeProjects">
+                    {field => (
+                        <Stack gap="xs">
+                            <Title order={2} children="Recoverable Compose applications" />
+                            <Text
+                                size="sm"
+                                children="Select each application’s Compose files explicitly. Every file and bind source must be covered by the backup sources. Images need pullable registry digests; Docker volumes are unsupported."
+                            />
+                            {composeApplications.map((app, index) => (
+                                <Paper key={app.project} withBorder p="md">
+                                    <Stack>
+                                        <Group justify="space-between">
+                                            <Text fw={600} children={app.project} />
+                                            <Button
+                                                type="button"
+                                                color="red"
+                                                variant="outline"
+                                                onClick={() =>
+                                                    setComposeApplications(current =>
+                                                        current.filter((_, i) => i !== index),
+                                                    )
+                                                }
+                                                children="Remove"
+                                            />
+                                        </Group>
+                                        {(['definitions', 'envFiles', 'secretFiles'] as const).map(name => (
+                                            <Textarea
+                                                key={name}
+                                                label={
+                                                    name === 'definitions'
+                                                        ? 'Compose definition files, in order'
+                                                        : name === 'envFiles'
+                                                          ? 'Environment files'
+                                                          : 'Secret files'
+                                                }
+                                                description="Absolute paths, one per line"
+                                                required={name === 'definitions'}
+                                                minRows={2}
+                                                value={app[name].join('\n')}
+                                                onChange={event => {
+                                                    const files = event.currentTarget.value.split('\n');
+                                                    setComposeApplications(current =>
+                                                        current.map((entry, i) =>
+                                                            i === index ? { ...entry, [name]: files } : entry,
+                                                        ),
+                                                    );
+                                                }}
+                                            />
+                                        ))}
+                                    </Stack>
+                                </Paper>
+                            ))}
+                            <Select
+                                label="Add application for a selected project"
+                                placeholder="Choose project"
+                                clearable
+                                data={field.state.value.filter(
+                                    project => !composeApplications.some(app => app.project === project),
+                                )}
+                                value={null}
+                                onChange={project => {
+                                    if (project)
+                                        setComposeApplications(current => [
+                                            ...current,
+                                            create(ComposeApplicationSchema, {
+                                                project,
+                                                definitions: [],
+                                                envFiles: [],
+                                                secretFiles: [],
+                                            }),
+                                        ]);
+                                }}
+                            />
+                        </Stack>
                     )}
                 </form.Field>
                 <form.Field name="name">
@@ -232,6 +330,7 @@ function SetEditor({
                                 if (event.currentTarget.checked) {
                                     form.setFieldValue('containerIds', []);
                                     form.setFieldValue('composeProjects', []);
+                                    setComposeApplications([]);
                                 }
                             }}
                         />
@@ -254,12 +353,8 @@ function SetEditor({
                     </form.Field>
                 ))}
                 <Group>
-                    <Button type="submit" loading={save.isPending}>
-                        Save backup set
-                    </Button>
-                    <Button variant="default" onClick={close}>
-                        Cancel
-                    </Button>
+                    <Button type="submit" loading={save.isPending} children="Save backup set" />
+                    <Button type="button" variant="default" onClick={close} children="Cancel" />
                 </Group>
             </Stack>
         </form>

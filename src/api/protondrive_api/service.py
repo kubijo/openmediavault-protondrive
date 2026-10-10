@@ -10,6 +10,7 @@ import protovalidate
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
+from protobuf.wkt import Any
 
 from .transport import BrokerClient
 from .v1 import control_pb2 as wire
@@ -87,8 +88,27 @@ class Control:
         except (OSError, ValueError) as exc:
             raise ConnectError(Code.UNAVAILABLE, 'The controller is unavailable') from exc
         if result.HasField('error'):
-            codes = {'invalid_argument': Code.INVALID_ARGUMENT, 'not_found': Code.NOT_FOUND}
-            raise ConnectError(codes.get(result.error.code, Code.INTERNAL), result.error.message)
+            codes = {
+                'invalid_argument': Code.INVALID_ARGUMENT,
+                'not_found': Code.NOT_FOUND,
+                'failed_precondition': Code.FAILED_PRECONDITION,
+                'sign_in_required': Code.FAILED_PRECONDITION,
+                'unavailable': Code.UNAVAILABLE,
+                'busy': Code.RESOURCE_EXHAUSTED,
+                'invalid_archive': Code.DATA_LOSS,
+                'internal': Code.INTERNAL,
+            }
+            code = codes.get(result.error.code)
+            if code is None:
+                raise ConnectError(Code.INTERNAL, 'The controller returned an invalid error')
+            detail = wire.FailureDetail(code=result.error.code)
+            raise ConnectError(
+                code,
+                result.error.message,
+                details=[
+                    Any(type_url=f'type.googleapis.com/{detail.DESCRIPTOR.full_name}', value=detail.SerializeToString())
+                ],
+            )
         if result.WhichOneof('response') != request.WhichOneof('request'):
             raise ConnectError(Code.INTERNAL, 'The controller returned an invalid response')
         return result

@@ -1,5 +1,0 @@
-# OMV's Salt loader requires plugins to install states in this tree.
-openmediavault-protondrive: dir-or-file-in-srv [srv/salt/*]
-# Preserve the hash-verified vendor executable byte-for-byte; never strip or relink it.
-openmediavault-protondrive: embedded-library libjpeg [usr/lib/openmediavault-protondrive/proton-drive]
-openmediavault-protondrive: unstripped-binary-or-object [usr/lib/openmediavault-protondrive/proton-drive]

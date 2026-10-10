@@ -4,6 +4,7 @@
 import json
 import shutil
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path('/var/lib/openmediavault-protondrive/proton/fake-remote')
@@ -34,6 +35,15 @@ def main():
     args = [arg for arg in sys.argv[1:] if arg not in ('--json', '-j')]
     if args[0] != 'filesystem':
         raise SystemExit('Unsupported fixture command')
+    if (ROOT / 'force-signed-out').exists() and args[1] in ('info', 'list'):
+        raise SystemExit('You need to login first')
+    if (ROOT / 'hold-list').exists() and args[1] == 'list':
+        (ROOT / 'hold-ready').touch()
+        deadline = time.monotonic() + 20
+        while not (ROOT / 'release-list').exists():
+            if time.monotonic() >= deadline:
+                raise SystemExit('Fixture list hold timed out')
+            time.sleep(0.05)
     match args[1:]:
         case ['info', path]:
             print(json.dumps(node(remote(path))))

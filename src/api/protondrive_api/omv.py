@@ -6,7 +6,11 @@ import subprocess
 import time
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import cast
 
+from protondrive.common import FAILURE_CODES, BackupError, FailureCode
+from protondrive.config import applications, destinations
 from protondrive.json_data import JSONValue, boolean, decode, integer, object_value, string
 
 from .v1 import control_pb2 as wire
@@ -32,7 +36,20 @@ def new_object_id() -> str:
     return str(uuid.UUID(value))
 
 
+def current_backup_failure(status: wire.GetStatusResponse, admitted_at: datetime) -> BackupError | None:
+    if status.phase not in ('failed', 'recovery-failed') or not status.error or not status.started_at:
+        return None
+    try:
+        if datetime.fromisoformat(status.started_at) < admitted_at:
+            return None
+    except (TypeError, ValueError):
+        return None
+    code = status.error_code if status.error_code in FAILURE_CODES else 'failed_precondition'
+    return BackupError(status.error, code=cast(FailureCode, code))
+
+
 def configuration(value: dict[str, JSONValue]) -> wire.Configuration:
+    root = string(value['remotepath'])
     return wire.Configuration(
         enabled=boolean(value['enable']),
         instance_id=string(value['instanceuuid']),
@@ -43,7 +60,13 @@ def configuration(value: dict[str, JSONValue]) -> wire.Configuration:
         command_timeout_seconds=integer(value['commandtimeout']),
         transfer_timeout_seconds=integer(value['transfertimeout']),
         staging_path=string(value['stagingpath']),
-        remote_path=string(value['remotepath']),
+        remote_path=root,
+        destinations=[
+            wire.Destination(
+                id=entry['id'], kind=entry['kind'], name=entry['name'], enabled=entry['enable'], root=entry['root']
+            )
+            for entry in destinations(value.get('destinations', ''), root)
+        ],
     )
 
 
@@ -59,6 +82,13 @@ def configuration_json(value: wire.Configuration) -> dict[str, JSONValue]:
         'transfertimeout': value.transfer_timeout_seconds,
         'stagingpath': value.staging_path,
         'remotepath': value.remote_path,
+        'destinations': json.dumps(
+            [
+                {'id': entry.id, 'kind': entry.kind, 'name': entry.name, 'enable': entry.enabled, 'root': entry.root}
+                for entry in value.destinations
+            ],
+            separators=(',', ':'),
+        ),
     }
 
 
@@ -72,6 +102,15 @@ def backup_set(value: dict[str, JSONValue]) -> wire.BackupSet:
         stop_all_containers=boolean(value['stopcontainers']),
         container_ids=string(value.get('containerids', '')).splitlines(),
         compose_projects=string(value.get('composeprojects', '')).splitlines(),
+        compose_applications=[
+            wire.ComposeApplication(
+                project=app['project'],
+                definitions=app['definitions'],
+                env_files=app['envfiles'],
+                secret_files=app['secretfiles'],
+            )
+            for app in applications(value.get('composeapps', ''))
+        ],
         local_keep=integer(value['localkeep']),
         remote_keep=integer(value['remotekeep']),
     )
@@ -130,6 +169,18 @@ class OMV:
                 'stopcontainers': value.stop_all_containers,
                 'containerids': '\n'.join(value.container_ids),
                 'composeprojects': '\n'.join(value.compose_projects),
+                'composeapps': json.dumps(
+                    [
+                        {
+                            'project': app.project,
+                            'definitions': list(app.definitions),
+                            'envfiles': list(app.env_files),
+                            'secretfiles': list(app.secret_files),
+                        }
+                        for app in value.compose_applications
+                    ],
+                    separators=(',', ':'),
+                ),
                 'localkeep': value.local_keep,
                 'remotekeep': value.remote_keep,
             },
@@ -145,12 +196,40 @@ class OMV:
     def status(self, actor: str) -> wire.GetStatusResponse:
         value = object_value(self.rpc(actor, 'ProtonDrive', 'getStatus', {}))
         dirty = self.rpc(actor, 'Config', 'isDirty', {'modules': ['protondrive']})
+        raw_backends = value.get('backends', [])
+        if not isinstance(raw_backends, list):
+            raise TypeError('Invalid backend status')
+        backends: list[wire.BackendStatus] = []
+        for raw in raw_backends:
+            backend = object_value(raw)
+            backends.append(
+                wire.BackendStatus(
+                    id=string(backend['id']),
+                    kind=string(backend['kind']),
+                    name=string(backend['name']),
+                    enabled=boolean(backend['enable']),
+                    state=string(backend['state']),
+                    email=string(backend['email']),
+                    authentication_url=string(backend['url']),
+                    error=string(backend['error']),
+                    transfer_phase=string(backend['transferphase']),
+                    transfer_file=string(backend['transferfile']),
+                    transfer_elapsed_seconds=integer(backend['transferelapsed']),
+                    **(
+                        {'transfer_percent': integer(backend['transferpercent'])}
+                        if 'transferpercent' in backend
+                        else {}
+                    ),
+                )
+            )
         return wire.GetStatusResponse(
             phase=string(value['phase']),
             running=boolean(value['running']),
             recovery_pending=boolean(value['recoverypending']),
             last_success=string(value['lastsuccess']),
             error=string(value['error']),
+            error_code=string(value.get('errorcode', '')),
+            started_at=string(value.get('started', '')),
             account_state=string(value['authstate']),
             account_error=string(value['autherror']),
             account_email=string(value['accountemail']),
@@ -159,6 +238,7 @@ class OMV:
             transfer_file=string(value['transferfile']),
             transfer_elapsed_seconds=integer(value['transferelapsed']),
             pending_configuration=boolean(dirty),
+            backends=backends,
         )
 
     def browse(self, actor: str, request: wire.BrowseDirectoriesRequest) -> wire.BrowseDirectoriesResponse:
@@ -181,7 +261,9 @@ class OMV:
             directories.append(wire.Directory(name=name, relative_path=relative))
         return wire.BrowseDirectoriesResponse(directories=directories)
 
-    def operation(self, actor: str, operation: wire.Operation.ValueType, progress: Callable[[str], None]) -> None:
+    def operation(
+        self, actor: str, operation: wire.Operation.ValueType, progress: Callable[[str], None], destination_id: str = ''
+    ) -> None:
         commands = {
             wire.OPERATION_CANCEL_BACKUP: 'cancel-run',
             wire.OPERATION_RECOVER_CONTAINERS: 'recover',
@@ -190,7 +272,10 @@ class OMV:
             wire.OPERATION_SIGN_OUT: 'logout',
         }
         if operation in commands:
-            execute(['/usr/sbin/omv-protondrive', commands[operation]], 700)
+            command = ['/usr/sbin/omv-protondrive', commands[operation]]
+            if destination_id:
+                command.extend(['--destination-id', destination_id])
+            execute(command, 700)
         elif operation == wire.OPERATION_APPLY_CONFIGURATION:
             result = self.rpc(actor, 'Config', 'applyChangesBg', {'modules': ['protondrive'], 'force': False})
             if not isinstance(result, str):
@@ -199,13 +284,23 @@ class OMV:
         elif operation == wire.OPERATION_BACKUP:
             if self.status(actor).pending_configuration:
                 raise ValueError('Apply pending configuration before starting a backup')
+            admitted_at = datetime.now(UTC)
             result = self.rpc(actor, 'ProtonDrive', 'runNow', {})
             if not isinstance(result, str):
                 raise ValueError('OMV did not return a backup task')
-            self._follow_task(actor, result, progress)
+            try:
+                self._follow_task(actor, result, progress)
+            except RuntimeError:
+                failure = current_backup_failure(self.status(actor), admitted_at)
+                if failure is not None:
+                    raise failure from None
+                raise
             status = self.status(actor)
             if status.phase != 'completed':
-                raise RuntimeError('Backup did not complete; inspect backup status')
+                failure = current_backup_failure(status, admitted_at)
+                if failure is not None:
+                    raise failure
+                raise BackupError('Backup did not complete; inspect backup status')
         else:
             raise ValueError('Unsupported operation')
 
@@ -221,4 +316,4 @@ class OMV:
                 return
             progress('Operation running')
             time.sleep(1)
-        raise TimeoutError('Timed out observing OMV operation; inspect status before retrying')
+        raise BackupError('Timed out observing OMV operation; inspect status before retrying')

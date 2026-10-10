@@ -23,8 +23,8 @@ const router = createBrowserRouter(
                 <AppShell header={{ height: 64 }} padding="md">
                     <AppShell.Header>
                         <Group className={styles.header} justify="space-between">
-                            <Text fw={700}>Proton Drive</Text>
-                            <Anchor href="/">OpenMediaVault</Anchor>
+                            <Text fw={700} children="Proton Drive" />
+                            <Anchor href="/" children="OpenMediaVault" />
                         </Group>
                     </AppShell.Header>
                     <AppShell.Main>

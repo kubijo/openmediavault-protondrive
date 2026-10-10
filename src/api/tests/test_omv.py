@@ -1,10 +1,12 @@
 """OMV CLI failures and background jobs must never become successful jobs."""
 
 import subprocess
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 
+from protondrive.common import BackupError
 from protondrive_api.omv import OMV, new_object_id
 from protondrive_api.v1 import control_pb2 as wire
 
@@ -36,6 +38,42 @@ def test_apply_observes_background_task_and_propagates_failure() -> None:
 def test_apply_rejects_missing_task() -> None:
     with patch.object(OMV, 'rpc', return_value=None), pytest.raises(ValueError, match='configuration task'):
         OMV().operation('admin', wire.OPERATION_APPLY_CONFIGURATION, lambda _: None)
+
+
+def test_backup_reports_current_run_failure_without_exposing_task_output() -> None:
+    current = wire.GetStatusResponse(
+        phase='failed',
+        error='Sign in to Proton Drive',
+        error_code='sign_in_required',
+        started_at=(datetime.now(UTC) + timedelta(seconds=2)).isoformat(),
+    )
+    with (
+        patch.object(OMV, 'status', side_effect=[wire.GetStatusResponse(), current]),
+        patch.object(OMV, 'rpc', return_value='/tmp/task'),
+        patch.object(OMV, '_follow_task', side_effect=RuntimeError('private OMV task output')),
+        pytest.raises(BackupError) as failure,
+    ):
+        OMV().operation('admin', wire.OPERATION_BACKUP, lambda _: None)
+    assert failure.value.code == 'sign_in_required'
+    assert str(failure.value) == 'Sign in to Proton Drive'
+
+
+def test_backup_does_not_reuse_a_previous_run_failure() -> None:
+    stale = wire.GetStatusResponse(
+        phase='failed',
+        error='Sign in to Proton Drive',
+        error_code='sign_in_required',
+        started_at=(datetime.now(UTC) - timedelta(seconds=20)).isoformat(),
+    )
+    with (
+        patch.object(OMV, 'status', side_effect=[wire.GetStatusResponse(), stale]),
+        patch.object(OMV, 'rpc', return_value='/tmp/task'),
+        patch.object(
+            OMV, '_follow_task', side_effect=RuntimeError('OMV operation failed; inspect the service journal')
+        ),
+        pytest.raises(RuntimeError, match='OMV operation failed'),
+    ):
+        OMV().operation('admin', wire.OPERATION_BACKUP, lambda _: None)
 
 
 def test_native_new_object_identifier_and_folder_names() -> None:

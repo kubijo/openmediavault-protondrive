@@ -202,8 +202,8 @@ in
     }
     {
       includes = [
-        "debian/openmediavault-protondrive.lintian-overrides"
-        "debian/openmediavault-protondrive.triggers"
+        "debian/*.lintian-overrides"
+        "debian/*.triggers"
         "debian/source/format"
       ];
       stages = [ "lint" ];

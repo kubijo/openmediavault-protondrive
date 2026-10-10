@@ -15,16 +15,29 @@ let
     export pnpm_config_pm_on_fail=download
     exec ${pkgs.lib.getExe pkgs.pnpm} "$@"
   '';
+  generatorTools = pkgs.stdenvNoCC.mkDerivation {
+    pname = "protondrive-web-generator-tools";
+    version = "1";
+    src = appSrc;
+    inherit pnpmDeps;
+    nativeBuildInputs = [
+      pkgs.nodejs_latest
+      buildPnpm
+      pkgs.pnpmConfigHook
+    ];
+    dontBuild = true;
+    installPhase = ''
+      mkdir -p "$out"
+      cp -r node_modules "$out/"
+    '';
+  };
 in
 assert manifest.devEngines.runtime.version == pkgs.nodejs_latest.version;
 pkgs.stdenvNoCC.mkDerivation {
   pname = "protondrive-web";
   version = "1";
   src = appSrc;
-  outputs = [
-    "out"
-    "tools"
-  ];
+  passthru.tools = generatorTools;
   inherit pnpmDeps;
   nativeBuildInputs = [
     pkgs.nodejs_latest
@@ -43,7 +56,5 @@ pkgs.stdenvNoCC.mkDerivation {
   installPhase = ''
     mkdir -p "$out"
     cp -r dist/. "$out/"
-    mkdir -p "$tools"
-    cp -r node_modules "$tools/"
   '';
 }

@@ -71,6 +71,9 @@ class InteractiveVMTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='omv-interactive-test-')
         self.addCleanup(temporary.cleanup)
+        package_name = patch.object(guest_module, 'debian_package_name', return_value='fixture-package')
+        package_name.start()
+        self.addCleanup(package_name.stop)
         self.root = Path(temporary.name)
         self.state = VMState(self.root / 'state')
         self.options = interactive_vm.Options('up', state_dir=self.state.root)

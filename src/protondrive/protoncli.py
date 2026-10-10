@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import re
 import signal
@@ -9,19 +10,42 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from .cli_lock import inspect_lock
 from .common import BINARY, STATE, BackupError, atomic_json, sync_directory
 from .json_data import JSONValue, decode
-from .models import Configuration, RemoteEntry, TransferStatus
+from .models import AuthStatus, Configuration, RemoteEntry, TransferStatus, auth_status
 
 OWNER_MARKER = '.omv-protondrive-owner.json'
+logger = logging.getLogger(__name__)
 
 
 class SignedOut(BackupError):
-    pass
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code='sign_in_required')
+
+
+def load_owner_id(path: Path = STATE / 'proton/owner-id') -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open('x') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(str(uuid.uuid4()) + '\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        pass
+    value = path.read_text().strip()
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError as exc:
+        raise BackupError('Invalid local Proton backup owner identity') from exc
+    if parsed.version != 4 or str(parsed) != value:
+        raise BackupError('Invalid local Proton backup owner identity')
+    return value
 
 
 def parse_json(text: str) -> JSONValue:
@@ -98,7 +122,7 @@ class ProtonCli:
         self.claims_directory = Path(claims_directory)
         self.lock = threading.RLock()
         self.state_lock = threading.RLock()
-        self.auth: dict[str, str] = {'state': 'unknown', 'url': '', 'error': ''}
+        self.auth: AuthStatus = auth_status('unknown')
         self.login: subprocess.Popen[str] | None = None
         self.current: subprocess.Popen[str] | None = None
         self.transfer: tuple[str, str, float] | None = None
@@ -164,16 +188,20 @@ class ProtonCli:
             except subprocess.TimeoutExpired as exc:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.communicate()
-                raise BackupError('Proton operation timed out') from exc
+                raise BackupError(
+                    'Proton operation timed out; retry when the service is available', code='unavailable'
+                ) from exc
             finally:
                 self.transfer = None
                 self.current = None
             if proc.returncode:
                 if 'You need to login first' in err or 'Failed to load session from secrets' in err:
-                    self.auth = {'state': 'signed-out', 'url': '', 'error': ''}
+                    self.auth = auth_status('signed-out')
                     raise SignedOut('Sign in to Proton Drive')
                 # Raw diagnostics may contain tokens. Log operation and exit only.
-                raise BackupError(f'Proton {args[0]} {args[1]} failed (exit {proc.returncode})')
+                raise BackupError(
+                    f'Proton {args[0]} {args[1]} failed (exit {proc.returncode}); inspect the service journal',
+                )
             return parse_json(out) if json_output else out
 
     def repair_lock(self) -> dict[str, str | bool]:
@@ -192,13 +220,13 @@ class ProtonCli:
     def transfer_status(self) -> TransferStatus:
         transfer = self.transfer
         if transfer is None:
-            return {'transferphase': '', 'transferfile': '', 'transferelapsed': 0}
+            return TransferStatus(transferphase='', transferfile='', transferelapsed=0)
         phase, name, started = transfer
-        return {
-            'transferphase': phase,
-            'transferfile': name,
-            'transferelapsed': max(0, int(time.monotonic() - started)),
-        }
+        return TransferStatus(
+            transferphase=phase,
+            transferfile=name,
+            transferelapsed=max(0, int(time.monotonic() - started)),
+        )
 
     def cancel_transfer(self, force: bool = False) -> None:
         proc = self.current
@@ -216,7 +244,7 @@ class ProtonCli:
             raise BackupError('No usable Proton item information')
         return value
 
-    def probe(self) -> dict[str, str]:
+    def probe(self) -> AuthStatus:
         previous = self.auth
         root = self.info('/my-files')
         owner = root.get('ownedBy')
@@ -229,11 +257,19 @@ class ProtonCli:
         with self.state_lock:
             # A completed probe must not restore identity after logout/cancellation.
             if self.auth is previous:
-                self.auth = {'state': 'signed-in', 'url': '', 'error': '', **identity}
+                self.auth = auth_status('signed-in', email=identity['email'], organization=identity['organization'])
             return self.status()
 
-    def status(self) -> dict[str, str]:
-        return {'email': '', 'organization': '', **self.auth}
+    def status(self) -> AuthStatus:
+        return self.auth.copy()
+
+    def probe_failed(self, error: str) -> AuthStatus:
+        if self.auth['state'] != 'signed-out':
+            self.auth = auth_status('unavailable', error=error)
+        return self.status()
+
+    def authentication_in_progress(self) -> bool:
+        return self.login is not None
 
     def list(self, path: str) -> list[RemoteEntry]:
         return entries(self._run(['filesystem', 'list', path]))
@@ -323,7 +359,7 @@ class ProtonCli:
             raise BackupError('Expired remote backup changed; cleanup skipped')
         node_result(self._run(['filesystem', 'trash', folder + '/' + entry['name']]), entry['uid'])
 
-    def start_auth(self) -> dict[str, str]:
+    def start_auth(self) -> AuthStatus:
         with self.state_lock:
             if self.login is not None:
                 return self.status()
@@ -339,7 +375,7 @@ class ProtonCli:
                     start_new_session=True,
                 )
                 self.login = proc
-                self.auth = {'state': 'signing-in', 'url': '', 'error': ''}
+                self.auth = auth_status('signing-in')
             finally:
                 self.lock.release()
             threading.Thread(target=self._watch_login, args=(proc,), daemon=True).start()
@@ -382,9 +418,15 @@ class ProtonCli:
                     raise BackupError('Sign-in did not complete')
                 self.login = None
                 self.probe()
-        except (BackupError, OSError, ValueError, TypeError) as exc:
+        except Exception as exc:
+            if not isinstance(exc, BackupError):
+                reference = uuid.uuid4().hex[:12]
+                logger.exception('Proton sign-in failed; reference %s', reference)
+                message = f'Proton sign-in failed; reference {reference}'
+            else:
+                message = str(exc)
             if self.login is proc or self.login is None:
-                self.auth = {'state': 'error', 'url': '', 'error': str(exc)}
+                self.auth = auth_status('error', error=message)
         finally:
             selector.close()
             if proc.poll() is None:
@@ -394,16 +436,16 @@ class ProtonCli:
             if self.login is proc:
                 self.login = None
 
-    def cancel_auth(self) -> dict[str, str]:
+    def cancel_auth(self) -> AuthStatus:
         with self.state_lock:
             proc, self.login = self.login, None
             if proc is not None:
                 proc.kill()
                 proc.wait()
-            self.auth = {'state': 'unknown', 'url': '', 'error': ''}
+            self.auth = auth_status('unknown')
         return self.status()
 
-    def logout(self) -> dict[str, str]:
+    def logout(self) -> AuthStatus:
         # The same state -> CLI lock order is used by login completion.
         with self.state_lock:
             if not self.lock.acquire(blocking=False):
@@ -411,7 +453,7 @@ class ProtonCli:
             try:
                 self.cancel_auth()
                 self._run(['auth', 'logout'], json_output=False)
-                self.auth = {'state': 'signed-out', 'url': '', 'error': ''}
+                self.auth = auth_status('signed-out')
                 return self.status()
             finally:
                 self.lock.release()

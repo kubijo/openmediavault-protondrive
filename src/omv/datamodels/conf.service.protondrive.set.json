@@ -50,6 +50,10 @@
     "composeprojects": {
       "type": "string",
       "default": ""
+    },
+    "composeapps": {
+      "type": "string",
+      "default": ""
     }
   }
 }

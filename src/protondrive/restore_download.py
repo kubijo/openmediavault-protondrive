@@ -9,12 +9,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .archive import check_space
+from .backend import RemoteFiles
 from .common import STATE, BackupError
 from .config import identifier
 from .json_data import JSONValue
 from .models import Configuration, Manifest
 from .operation import Cancelled, OperationControl
-from .retention import RemoteFiles, archive_metadata, read_remote_manifest, unique
+from .retention import archive_metadata, read_remote_manifest, unique
 
 CACHE = STATE / 'proton/restore-cache'
 
@@ -39,7 +40,7 @@ def download(
     control.check()
     manifest = archive_metadata(read_remote_manifest(cli, folder, name + '.manifest.json'), instance, set_id, name)
     if archive['size'] != manifest['size']:
-        raise BackupError('Remote size disagrees with the completion manifest')
+        raise BackupError('Remote size disagrees with the completion manifest', code='invalid_archive')
     cache.mkdir(mode=0o700, exist_ok=True)
     directory = cache / job
     directory.mkdir(mode=0o700)

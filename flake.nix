@@ -55,6 +55,30 @@
             ]
           );
       qaPython = pythonSet.mkVirtualEnv "protondrive-tooling" workspace.deps.all;
+      packageMeta =
+        let
+          control = pkgs.lib.splitString "\n" (builtins.readFile ./debian/control);
+          fields =
+            prefix: map (pkgs.lib.removePrefix prefix) (pkgs.lib.filter (pkgs.lib.hasPrefix prefix) control);
+          binary = fields "Package: ";
+          source = fields "Source: ";
+          name =
+            if builtins.length binary == 1 && source == binary then
+              builtins.head binary
+            else
+              throw "Expected matching Source and Package fields in debian/control";
+          header = builtins.head (pkgs.lib.splitString "\n" (builtins.readFile ./debian/changelog));
+          changelog = builtins.match "([^ ]+) \\(([^)]+)\\).*" header;
+          version =
+            if changelog != null && builtins.elemAt changelog 0 == name then
+              builtins.elemAt changelog 1
+            else
+              throw "debian/changelog package name does not match debian/control";
+        in
+        {
+          inherit name version;
+          fileName = "${name}_${version}_amd64.deb";
+        };
       maintenance = import ./infra/nix/maintenance.nix {
         inherit pkgs nix-tools;
         python = qaPython;
@@ -73,7 +97,7 @@
         type = "app";
         program = pkgs.lib.getExe (
           import ./infra/nix/test-vm.nix {
-            inherit pkgs mode;
+            inherit pkgs mode packageMeta;
             python = qaPython;
             src = self;
             package = deb;
@@ -114,6 +138,7 @@
           cli
           apiRuntime
           webApp
+          packageMeta
           ;
         python = qaPython;
         src = self;
@@ -128,7 +153,7 @@
           export PYTHONPATH="${self}/tools"
           exec python ${self}/tests/integration/debian_smoke.py \
             --guest-bundle ${vmGuestTools}/omv-protondrive-vm-tools.tar \
-            --package ${deb}/openmediavault-protondrive_7.0.0_amd64.deb "$@"
+            --package ${deb}/${packageMeta.fileName} "$@"
         '';
       };
       webProbe = import ./infra/nix/web-probe.nix {
@@ -372,7 +397,7 @@
           }
           {
             name = "Debian package";
-            run = "test -f ${deb}/openmediavault-protondrive_7.0.0_amd64.deb";
+            run = "test -f ${deb}/${packageMeta.fileName}";
           }
         ];
       };
@@ -381,13 +406,18 @@
       formatter.${system} = project.formatter;
       packages.${system} = {
         default = deb;
-        openmediavault-protondrive = deb;
         proton-drive-source = cli;
         api-runtime = apiRuntime;
         web-app = webApp;
         api-generation = apiGeneration.check;
         api-schema-dependencies = apiGeneration.dependencies;
-      };
+      }
+      // builtins.listToAttrs [
+        {
+          inherit (packageMeta) name;
+          value = deb;
+        }
+      ];
       checks.${system} = project.checks // {
         tests = qa.hermeticTests;
         web-probe-types = webProbe.checked;

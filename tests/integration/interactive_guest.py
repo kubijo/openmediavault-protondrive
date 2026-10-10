@@ -7,14 +7,35 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
 if __package__:
-    from .guest_support import decode, items, mapping, run, string
+    from .guest_support import (
+        OmvConfiguration,
+        OmvDestination,
+        ProtonDriveRpc,
+        debian_package_name,
+        decode,
+        interactive_fixture,
+        items,
+        mapping,
+        run,
+        string,
+    )
 else:
-    from guest_support import decode, items, mapping, run, string
+    from guest_support import (
+        OmvConfiguration,
+        OmvDestination,
+        ProtonDriveRpc,
+        debian_package_name,
+        decode,
+        interactive_fixture,
+        items,
+        mapping,
+        run,
+        string,
+    )
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 INSTALL_MODULES = ('monit', 'nginx', 'phpfpm', 'protondrive')
@@ -32,22 +53,9 @@ def setup_traceback():
         install_traceback()
 
 
-def rpc(method: str, params: Mapping[str, object] | None = None) -> dict[str, object]:
-    result = run(
-        'omv-rpc',
-        '-u',
-        'admin',
-        'ProtonDrive',
-        method,
-        json.dumps(params or {}),
-        capture_output=True,
-        text=True,
-    )
-    return decode(result.stdout)
-
-
-def initialize(configuration: Path):
-    settings = decode(configuration.read_text())
+def initialize(configuration: Path) -> None:
+    settings = interactive_fixture(decode(configuration.read_text()))
+    rpc = ProtonDriveRpc(verbose=True)
     # Send the initial web password over stdin, never through argv or logs.
     run('chpasswd', input=f'admin:{settings["admin_password"]}\n', text=True)
     for device in ('desktop', 'mobile'):
@@ -59,19 +67,23 @@ def initialize(configuration: Path):
             'setLocalStorageItem',
             json.dumps({'devicetype': device, 'key': 'prefers-color-scheme', 'value': 'dark'}),
         )
-    plugin = rpc('get')
+    plugin = rpc.get_configuration()
     plugin.update(enable=False, remotepath=settings['remote_folder'])
-    rpc('set', plugin)
-    sets = rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'})
-    for raw in items(sets['data']):
-        item = mapping(raw)
+    rpc.save_configuration(plugin)
+    destination = OmvDestination(
+        id='protondrive', kind='protondrive', name='Proton Drive', enable=True, root=plugin['remotepath']
+    )
+    explicit: OmvConfiguration = {**plugin, 'destinations': json.dumps([destination])}
+    rpc.save_configuration(explicit)
+    rpc.save_configuration(plugin)
+    for item in rpc.list_sets():
         if item['name'] not in ('system', 'appData'):
             raise RuntimeError('Unexpected backup set in fresh interactive VM')
-        directory = Path('/data/interactive-fixtures') / string(item['name'])
+        directory = Path('/data/interactive-fixtures') / item['name']
         directory.mkdir(parents=True, exist_ok=True)
         (directory / 'example.txt').write_text('Disposable OMV integration fixture.\n')
         item.update(paths=str(directory), excludes='', stopcontainers=False)
-        rpc('setSet', item)
+        rpc.save_set(item)
     configuration.unlink()
 
 
@@ -183,6 +195,7 @@ def brand_web_ui(
 def main(package: Path, configuration: Path | None = None):
     if not Path('/var/lib/protondrive-interactive-vm').exists():
         raise SystemExit('Run using the interactive VM harness')
+    name = debian_package_name(package)
     check_pending_changes()
     os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
     run('apt-get', 'install', '-y', '--reinstall', '--no-install-recommends', 'python3-rich', 'nftables', str(package))
@@ -202,7 +215,7 @@ def main(package: Path, configuration: Path | None = None):
     apply_configuration(*INSTALL_MODULES)
     run('omv-mkworkbench', 'all')
     brand_web_ui()
-    run('dpkg', '--verify', 'openmediavault-protondrive')
+    run('dpkg', '--verify', name)
     run('systemctl', 'is-active', 'nginx', 'omv-protondrive', 'omv-protondrive-api', 'omv-protondrive-controller')
     print('PASS: real plugin installed; interactive state retained', flush=True)
 

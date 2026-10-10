@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tests.integration import owned_cli_lock_guest as guest
+
 from helpers import configuration
 from protondrive.cli_lock import MESSAGE, inspect_lock
 from protondrive.common import BackupError
@@ -14,6 +16,25 @@ from protondrive.protoncli import ProtonCli
 
 
 class CliLockTests(unittest.TestCase):
+    def test_guest_start_retries_only_unavailable_service(self) -> None:
+        with (
+            patch.object(guest, 'run'),
+            patch.object(guest, 'request', side_effect=[BackupError('starting', code='unavailable'), {}]) as request,
+            patch.object(guest.time, 'sleep') as sleep,
+        ):
+            guest.start()
+            self.assertEqual(request.call_count, 2)
+            sleep.assert_called_once_with(0.1)
+
+        with (
+            patch.object(guest, 'run'),
+            patch.object(guest, 'request', side_effect=BackupError('bad lock')),
+            patch.object(guest.time, 'sleep') as sleep,
+            self.assertRaisesRegex(BackupError, 'bad lock'),
+        ):
+            guest.start()
+            sleep.assert_not_called()
+
     def test_corrupt_lock_is_preserved_privately_and_repair_is_repeatable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

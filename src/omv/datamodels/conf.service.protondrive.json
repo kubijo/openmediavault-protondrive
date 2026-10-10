@@ -31,6 +31,10 @@
       "type": "string",
       "default": "/my-files/open-media-vault-proton-backup"
     },
+    "destinations": {
+      "type": "string",
+      "default": ""
+    },
     "instanceuuid": {
       "type": "string",
       "format": "uuidv4"
@@ -107,6 +111,10 @@
                 "default": ""
               },
               "composeprojects": {
+                "type": "string",
+                "default": ""
+              },
+              "composeapps": {
                 "type": "string",
                 "default": ""
               }

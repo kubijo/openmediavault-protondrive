@@ -1,6 +1,6 @@
-# OpenMediaVault Proton Drive backups
+# OpenMediaVault Cloud Backup
 
-An OMV 7 plugin that archives NAS paths with filesystem metadata and uploads them to Proton Drive. Targets Debian 12
+An OMV 7 plugin that archives NAS paths with filesystem metadata and copies them to cloud storage. Targets Debian 12
 amd64 with OMV 7.7.9 or newer in the 7.x series. Bundles Proton Drive CLI 0.8.0; the NAS does not need Nix.
 
 ## Build and validate
@@ -13,9 +13,8 @@ just dev::validate
 just app::build
 ```
 
-The package is `result/openmediavault-protondrive_7.0.0_amd64.deb`. `just dev::validate` runs the Nix-defined
-formatting, lint, tests and package build, and rejects untracked source files. Use `just dev::format` to apply
-formatting.
+The package is `result/*.deb`. `just dev::validate` runs the Nix-defined formatting, lint, tests and package build, and
+rejects untracked source files. Use `just dev::format` to apply formatting.
 
 Tooling uses Python 3.14 via uv/uv2nix; the installed runtime supports Debian's Python 3.11. Run `uv sync` for editor
 dependencies in `.venv`. Nix assembles the package using the hash-pinned CLI source in `infra/nix/proton-cli.nix`.
@@ -23,7 +22,7 @@ dependencies in `.venv`. Nix assembles the package using the hash-pinned CLI sou
 ## Configure
 
 1. Complete the [isolated tests and release checks](tests/integration/README.md) before installing on the NAS.
-2. Install with `apt install ./openmediavault-protondrive_7.0.0_amd64.deb`.
+2. Install the built package with `apt install ./result/*.deb`.
 3. Open **Services → Proton Drive**, review Settings and Backup sets, save, and Apply.
 4. Select **Sign in** and complete authentication through the Proton browser link.
 5. Run a manual backup and [test restoring it](docs/restore.md), then enable scheduled backups.

@@ -20,8 +20,12 @@ class JSONDataTests(unittest.TestCase):
             path = Path(temporary) / 'service.sock'
             server.bind(str(path))
             server.listen(1)
-            with patch('protondrive.common.SOCKET', path), self.assertRaises(TimeoutError):
+            with (
+                patch('protondrive.common.SOCKET', path),
+                self.assertRaisesRegex(BackupError, 'unavailable') as failure,
+            ):
                 request('status', timeout=0.01)
+            self.assertEqual(failure.exception.code, 'unavailable')
 
     def test_atomic_config_has_service_permissions_before_publication(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -89,6 +93,9 @@ class RecordTests(unittest.TestCase):
         status = records.service_status(value)
         self.assertEqual(status['transferelapsed'], 12)
         self.assertEqual(status['transferfile'], 'λ.tar.zst')
+        unavailable = records.service_status({'state': 'unavailable', 'url': '', 'error': 'down'})
+        self.assertEqual(unavailable['email'], '')
+        self.assertEqual(unavailable['transferelapsed'], 0)
         with self.assertRaises(KeyError):
             records.service_status({})
         with self.assertRaises(TypeError):

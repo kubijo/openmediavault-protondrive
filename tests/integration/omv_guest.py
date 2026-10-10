@@ -1,48 +1,36 @@
 """Install and exercise the plugin inside the disposable VM started by vm.py."""
 
-import json
 import os
 import subprocess
 import sys
-from collections.abc import Mapping
 from pathlib import Path
 
 if __package__:
-    from .guest_support import decode, items, mapping, run, string
+    from .guest_support import ProtonDriveRpc, debian_package_name, run
 else:
-    from guest_support import decode, items, mapping, run, string
-
-
-def rpc(method: str, params: Mapping[str, object] | None = None) -> dict[str, object]:
-    result = subprocess.run(
-        ['omv-rpc', '-u', 'admin', 'ProtonDrive', method, json.dumps(params or {})],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode:
-        raise RuntimeError(f'RPC {method} failed: {result.stdout} {result.stderr}')
-    return decode(result.stdout)
+    from guest_support import ProtonDriveRpc, debian_package_name, run
 
 
 def main(package: Path):
     if not Path('/run/protondrive-disposable-test').exists():
         raise SystemExit('Run using the disposable VM harness')
     os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
+    name = debian_package_name(package)
     Path('/data/test-tmp').mkdir(parents=True, exist_ok=True)
     os.environ['TMPDIR'] = '/data/test-tmp'
     # Also permits diagnosis using a stopped guest image from an earlier failed run.
-    installed = subprocess.run(
-        ['dpkg-query', '-W', 'openmediavault-protondrive'],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    if installed.returncode == 0:
-        run('apt-get', 'purge', '-y', 'openmediavault-protondrive')
+    for installed_name in ('openmediavault-protondrive', name):
+        installed = subprocess.run(
+            ['dpkg-query', '-W', installed_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if installed.returncode == 0:
+            run('apt-get', 'purge', '-y', installed_name)
     run('apt-get', 'install', '-y', '--no-install-recommends', str(package))
     run('systemctl', 'restart', 'openmediavault-engined')
-    run('dpkg', '--verify', 'openmediavault-protondrive')
+    run('dpkg', '--verify', name)
     run('/usr/lib/openmediavault-protondrive/proton-drive', '--help')
     run(
         'python3',
@@ -57,12 +45,13 @@ def main(package: Path):
             'PYTHONPATH': '/usr/share/openmediavault-protondrive:/src:/usr/local/lib/omv-protondrive-vm',
         },
     )
-    settings = rpc('get')
+    rpc = ProtonDriveRpc()
+    settings = rpc.get_configuration()
     assert not settings['enable']
-    sets = rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'})
-    assert {string(mapping(entry)['name']) for entry in items(sets['data'])} == {'system', 'appData'}, sets
-    rpc('set', settings)
-    assert rpc('getSetList', {'start': 0, 'limit': -1, 'sortfield': 'name', 'sortdir': 'ASC'}) == sets
+    sets = rpc.list_sets()
+    assert {entry['name'] for entry in sets} == {'system', 'appData'}, sets
+    rpc.save_configuration(settings)
+    assert rpc.list_sets() == sets
     for _ in range(2):
         run('omv-salt', 'deploy', 'run', 'protondrive')
     run('systemctl', 'is-active', 'omv-protondrive')

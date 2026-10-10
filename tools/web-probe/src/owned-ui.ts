@@ -20,7 +20,7 @@ export async function checkOwnedUi(
     if (options.expectSignedIn) await page.getByText('Signed in', { exact: true }).waitFor();
     await screenshot(page, options.output, `owned-overview-${width}.png`, screenshots);
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    const root = page.getByRole('textbox', { name: 'Proton Drive root directory' });
+    const root = page.getByRole('textbox', { name: 'Remote root directory' });
     await root.waitFor();
     const remoteFolder = await root.inputValue();
     requireCondition(remoteFolder === options.expectedRoot, `Unexpected remote root: ${remoteFolder}`);

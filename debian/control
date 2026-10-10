@@ -1,14 +1,14 @@
-Source: openmediavault-protondrive
+Source: openmediavault-cloud-backup
 Section: admin
 Priority: optional
-Maintainer: OMV Proton Drive contributors <kubijo@users.noreply.github.com>
+Maintainer: OMV Cloud Backup contributors <kubijo@users.noreply.github.com>
 Build-Depends:
  dpkg-dev,
  nix-bin,
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 
-Package: openmediavault-protondrive
+Package: openmediavault-cloud-backup
 Architecture: amd64
 XB-Plugin-Section: backup
 XB-Plugin-Architecture: amd64
@@ -27,7 +27,11 @@ Depends:
  python3 (>= 3.11),
  tar (>= 1.31),
  zstd,
-Description: OpenMediaVault backups to Proton Drive
+Breaks:
+ openmediavault-protondrive,
+Replaces:
+ openmediavault-protondrive,
+Description: OpenMediaVault backups to cloud storage
  Archive selected NAS paths with ownership, ACLs and extended attributes,
- restore stopped containers, and upload timestamped backups to Proton Drive.
- Includes a private keyring session and configurable local and remote retention.
+ restore stopped containers, and copy timestamped backups to enabled cloud
+ destinations. Proton Drive is the first supported provider.

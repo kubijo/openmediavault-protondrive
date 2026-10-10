@@ -10,6 +10,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .common import BackupError, atomic_json, sync_directory
+from .compose import ProjectCapture
+from .compose import manifest as compose_manifest
 from .config import lines
 from .models import BackupSet, Manifest
 
@@ -112,18 +114,27 @@ def digest(path: Path, check: Callable[[], None] | None = None) -> str:
         return value.hexdigest()
 
 
-def publish(item: BackupSet, partial: Path, instance: str, timestamp: str, gid: int) -> Path:
+def publish(
+    item: BackupSet,
+    partial: Path,
+    instance: str,
+    timestamp: str,
+    gid: int,
+    captures: tuple[ProjectCapture, ...] = (),
+) -> Path:
     subprocess.run(['zstd', '--test', '--quiet', str(partial)], check=True)
     final = partial.with_suffix('')
-    metadata: Manifest = {
-        'format': 1,
-        'instanceuuid': instance,
-        'setuuid': item['uuid'],
-        'timestamp': timestamp,
-        'archive': final.name,
-        'size': partial.stat().st_size,
-        'sha256': digest(partial),
-    }
+    metadata = Manifest(
+        format=2 if captures else 1,
+        instanceuuid=instance,
+        setuuid=item['uuid'],
+        timestamp=timestamp,
+        archive=final.name,
+        size=partial.stat().st_size,
+        sha256=digest(partial),
+    )
+    if captures:
+        metadata['compose'] = compose_manifest(captures)
     os.chown(partial, 0, gid)
     os.chmod(partial, 0o640)
     # The run lock plus preflight collision checks protect this publication.

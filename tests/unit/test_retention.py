@@ -57,6 +57,12 @@ class RetentionTests(unittest.TestCase):
         with self.assertRaises(BackupError):
             metadata(value, self.config, self.item, value['archive'])
 
+    def test_boolean_manifest_version_is_rejected(self):
+        value: dict[str, object] = dict(self.value(1))
+        value['format'] = True
+        with self.assertRaisesRegex(BackupError, 'identity'):
+            metadata(value, self.config, self.item, self.value(1)['archive'])
+
     def test_unconfirmed_local_archives_survive_retention(self):
         from protondrive.config import remote_folder
 

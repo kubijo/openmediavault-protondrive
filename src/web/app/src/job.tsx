@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { client } from './api.ts';
-import { Failure } from './components.tsx';
+import { Failure, failureError } from './components.tsx';
 import type { Job } from './generated/protondrive_api/v1/control_pb.ts';
 import { ControlService, JobState, Operation } from './generated/protondrive_api/v1/control_pb.ts';
 
@@ -48,15 +48,21 @@ export function JobView(): ReactElement {
     return (
         <Stack>
             <Group justify="space-between">
-                <Title order={1}>Operation</Title>
-                <Badge>
-                    {job
-                        ? (Object.entries(JobState).find(([, value]) => value === job.state)?.[0] ?? 'Unknown')
-                        : 'Connecting'}
-                </Badge>
+                <Title order={1} children="Operation" />
+                <Badge
+                    children={
+                        job
+                            ? (Object.entries(JobState).find(([, value]) => value === job.state)?.[0] ?? 'Unknown')
+                            : 'Connecting'
+                    }
+                />
             </Group>
             <Failure error={error ?? cancellation.error} />
-            <Text>{job?.message}</Text>
+            {job && (job.state === JobState.FAILED || (job.state === JobState.INTERRUPTED && job.failureCode)) ? (
+                <Failure error={failureError(job.message, job.failureCode)} />
+            ) : (
+                <Text children={job?.message} />
+            )}
             {job &&
                 !finished(job.state) &&
                 (job.operation === Operation.INSPECT_ARCHIVE || job.operation === Operation.EXTRACT_FILES) && (
@@ -64,23 +70,19 @@ export function JobView(): ReactElement {
                         color="red"
                         loading={cancellation.isPending}
                         onClick={() => cancellation.mutate({ id: job.id })}
-                    >
-                        Cancel operation
-                    </Button>
+                        children="Cancel operation"
+                    />
                 )}
             {job?.state === JobState.SUCCEEDED && job.operation === Operation.INSPECT_ARCHIVE && (
-                <Button component={Link} to={`/archives/${job.id}`}>
-                    Browse verified archive
-                </Button>
+                <Button component={Link} to={`/archives/${job.id}`} children="Browse verified archive" />
             )}
             {job?.state === JobState.INTERRUPTED && (
-                <Alert color="yellow">
-                    Inspect backup status before retrying. The underlying operation may still be running.
-                </Alert>
+                <Alert
+                    color="yellow"
+                    children="Inspect backup status before retrying. The underlying operation may still be running."
+                />
             )}
-            <Button component={Link} to="/" variant="default">
-                Back to overview
-            </Button>
+            <Button component={Link} to="/" variant="default" children="Back to overview" />
         </Stack>
     );
 }

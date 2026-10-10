@@ -17,12 +17,17 @@ IMAGE = f'{string(DEBIAN["image"])}:{string(DEBIAN["tag"])}@{string(DEBIAN["dige
 class Options:
     guest_bundle: Path
     """Built guest helpers and locked portable test dependencies, supplied by Nix."""
-    package: Path = Path('result/openmediavault-protondrive_7.0.0_amd64.deb')
+    package: Path = Path('result')
     """Built Debian package to test; build it with `just app::build` first."""
 
 
 def main(options: Options):
     package = options.package.resolve(strict=True)
+    if package.is_dir():
+        candidates = list(package.glob('*.deb'))
+        if len(candidates) != 1:
+            raise ValueError('Expected exactly one built Debian package')
+        package = candidates[0]
     bundle = options.guest_bundle.resolve(strict=True)
     source = SOURCE
     name = f'protondrive-test-{uuid.uuid4().hex}'

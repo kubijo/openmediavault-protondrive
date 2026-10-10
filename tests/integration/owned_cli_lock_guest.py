@@ -32,7 +32,9 @@ def start() -> None:
         try:
             request('status', timeout=2)
             return
-        except OSError:
+        except BackupError as error:
+            if error.code != 'unavailable':
+                raise
             if time.monotonic() >= deadline:
                 raise RuntimeError('Proton service did not become ready') from None
             time.sleep(0.1)
@@ -62,13 +64,11 @@ def main() -> None:
                 os.fsync(stream.fileno())
             sync_directory(DIRECTORY)
             start()
-            try:
-                request('probe')
-            except BackupError as error:
-                if str(error) != MESSAGE:
-                    raise RuntimeError('Corrupt lock did not produce its actionable diagnostic') from error
-            else:
-                raise RuntimeError('Corrupt lock was not detected')
+            status = request('probe')
+            if status['state'] != 'unavailable' or status['error'] != MESSAGE:
+                raise RuntimeError(
+                    f'Corrupt lock diagnostic mismatch: state={status["state"]}, error={status["error"]}'
+                )
         finally:
             start()
             if injected:

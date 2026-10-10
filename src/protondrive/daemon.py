@@ -1,7 +1,7 @@
 """Unprivileged service inside the private D-Bus session."""
 
 import json
-import os
+import logging
 import signal
 import socketserver
 import stat
@@ -10,101 +10,127 @@ import time
 import uuid
 from pathlib import Path
 
-from .common import LIMIT, SOCKET, STATE, BackupError
+from .backend import CliLockRepair, StorageBackend
+from .backend_registry import create_backend
+from .common import LIMIT, SOCKET, BackupError
 from .config import identifier, load, remote_folder
 from .json_data import JSONValue, decode
-from .models import Configuration
-from .protoncli import ProtonCli
+from .models import AuthStatus, Configuration, Destination
 from .restore_download import Downloads, discard
 from .retention import prune_remote, upload_pair
 
-
-def load_owner_id(path: Path = STATE / 'proton/owner-id') -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with path.open('x') as stream:
-            os.fchmod(stream.fileno(), 0o600)
-            stream.write(str(uuid.uuid4()) + '\n')
-            stream.flush()
-            os.fsync(stream.fileno())
-    except FileExistsError:
-        pass
-    value = path.read_text().strip()
-    try:
-        parsed = uuid.UUID(value)
-    except ValueError as exc:
-        raise BackupError('Invalid local Proton backup owner identity') from exc
-    if parsed.version != 4 or str(parsed) != value:
-        raise BackupError('Invalid local Proton backup owner identity')
-    return value
+logger = logging.getLogger(__name__)
 
 
 class Service:
     def __init__(self, config: Configuration) -> None:
         self.config = config
-        self.cli = ProtonCli(config, owner_id=load_owner_id())
-        self.downloads = Downloads(self.cli.cancel_transfer)
+        self.backends: dict[str, StorageBackend] = {
+            destination['id']: create_backend(destination, config) for destination in config['destinations']
+        }
+        self.downloads = {
+            destination_id: Downloads(backend.cancel_transfer) for destination_id, backend in self.backends.items()
+        }
         self.operations = threading.Lock()
         self.probe_guard = threading.Lock()
         self.last_probe = 0.0
 
+    def destination(self, message: dict[str, JSONValue]) -> tuple[Destination, StorageBackend]:
+        default_id = next(
+            (entry['id'] for entry in self.config['destinations'] if entry['id'] == 'protondrive'),
+            self.config['destinations'][0]['id'],
+        )
+        destination_id = message.get('destinationid', default_id)
+        if not isinstance(destination_id, str):
+            raise BackupError('Invalid backup destination')
+        destination = next((entry for entry in self.config['destinations'] if entry['id'] == destination_id), None)
+        if destination is None:
+            raise BackupError('Unknown backup destination')
+        return destination, self.backends[destination_id]
+
     def schedule_probe(self) -> None:
-        if self.operations.locked() or self.cli.login is not None or time.monotonic() - self.last_probe < 30:
+        if self.operations.locked() or time.monotonic() - self.last_probe < 30:
             return
         if not self.probe_guard.acquire(blocking=False):
             return
 
         def probe() -> None:
             try:
-                self.probe()
+                for destination in self.config['destinations']:
+                    if not self.backends[destination['id']].authentication_in_progress():
+                        self.probe(destination['id'])
             finally:
                 self.last_probe = time.monotonic()
                 self.probe_guard.release()
 
         threading.Thread(target=probe, daemon=True).start()
 
-    def probe(self) -> dict[str, str]:
+    def probe(self, destination_id: str = 'protondrive') -> AuthStatus:
+        backend = self.backends[destination_id]
         try:
-            return self.cli.probe()
-        except (BackupError, OSError, ValueError, TypeError) as exc:
-            if self.cli.auth['state'] != 'signed-out':
-                self.cli.auth['error'] = str(exc)
-            return self.cli.status()
+            return backend.probe()
+        except BackupError as exc:
+            return backend.probe_failed(str(exc))
+        except Exception:
+            reference = uuid.uuid4().hex[:12]
+            logger.exception('Backend probe failed; reference %s', reference)
+            return backend.probe_failed(f'Account status unavailable; reference {reference}')
 
     def dispatch(self, message: dict[str, JSONValue]) -> object:
         operation = message.get('operation')
+        destination, backend = self.destination(message)
         if operation == 'status':
             self.schedule_probe()
-            return {**self.cli.status(), **self.cli.transfer_status()}
+            return {**backend.status(), **backend.transfer_status()}
+        if operation == 'backend-statuses':
+            self.schedule_probe()
+            return [
+                {
+                    'id': entry['id'],
+                    'kind': entry['kind'],
+                    'name': entry['name'],
+                    'enable': entry['enable'],
+                    **self.backends[entry['id']].status(),
+                    **self.backends[entry['id']].transfer_status(),
+                }
+                for entry in self.config['destinations']
+            ]
         if operation == 'cancel-transfer':
-            self.cli.cancel_transfer()
+            targets = self.backends.values() if 'destinationid' not in message else (backend,)
+            for target in targets:
+                target.cancel_transfer()
             return True
         if operation == 'cancel-download':
-            self.downloads.cancel(message.get('jobuuid'))
+            for download in self.downloads.values():
+                download.cancel(message.get('jobuuid'))
             return True
         if operation == 'start-auth':
-            return self.cli.start_auth()
+            return backend.start_auth()
         if operation == 'cancel-auth':
-            return self.cli.cancel_auth()
+            return backend.cancel_auth()
         if operation == 'logout':
-            return self.cli.logout()
+            return backend.logout()
         # Navigation overlaps reads; wait briefly within the API's 25-second deadline.
         if not self.operations.acquire(timeout=5 if operation == 'browse' else 0):
-            raise BackupError('Proton service is busy')
+            raise BackupError('Storage service is busy; retry after the current operation', code='busy')
         try:
             if operation == 'repair-cli-lock':
-                return self.cli.repair_lock()
+                if not isinstance(backend, CliLockRepair):
+                    raise BackupError('This backend has no CLI lock to repair')
+                return backend.repair_lock()
             if operation == 'probe':
-                return self.cli.probe()
+                return self.probe(destination['id'])
             if operation == 'download-archive':
-                return self.downloads.run(self.cli, self.config, message)
+                scoped = self.config.copy()
+                scoped['remotepath'] = destination['root']
+                return self.downloads[destination['id']].run(backend, scoped, message)
             if operation == 'discard-download':
                 discard(message.get('jobuuid'))
                 return True
             if operation == 'browse':
                 # Browsing must never create folders, claim an instance or run
                 # retention, including when reading a different NAS's archives.
-                folder = self.config['remotepath']
+                folder = destination['root']
                 instance = message.get('instanceuuid')
                 set_id = message.get('setuuid')
                 if set_id is not None and instance is None:
@@ -113,13 +139,13 @@ class Service:
                     folder += '/' + identifier(instance)
                 if set_id is not None:
                     folder += '/' + identifier(set_id)
-                return self.cli.list(folder)
+                return backend.list(folder)
             if operation not in ('prepare', 'upload', 'prune'):
-                raise BackupError('Unknown Proton operation')
+                raise BackupError('Unknown storage operation')
             item = next((item for item in self.config['sets'] if item['uuid'] == message.get('setuuid')), None)
             if item is None:
                 raise BackupError('Unknown backup set')
-            folder = remote_folder(self.config, item)
+            folder = remote_folder(self.config, item, destination)
             path: Path | None = None
             if operation == 'upload':
                 name = message.get('name', '')
@@ -137,15 +163,15 @@ class Service:
                         or candidate.resolve().parent != directory.resolve()
                     ):
                         raise BackupError('Uploads require root-owned completed staging files')
-            self.cli.ensure_instance_owned()
+            backend.ensure_instance_owned()
             if operation == 'prepare':
-                self.cli.ensure_folder(folder)
-                return self.cli.list(folder)
+                backend.ensure_folder(folder)
+                return backend.list(folder)
             if operation == 'upload':
                 if path is None:
                     raise BackupError('Missing validated upload path')
-                return upload_pair(self.cli, self.config, item, path, folder)
-            return prune_remote(self.cli, self.config, item, folder)
+                return upload_pair(backend, self.config, item, path, folder)
+            return prune_remote(backend, self.config, item, folder)
         finally:
             self.operations.release()
 
@@ -166,8 +192,12 @@ def serve() -> None:
                 if not isinstance(message, dict):
                     raise BackupError('Invalid request')
                 result = {'ok': True, 'result': service.dispatch(message)}
-            except Exception as exc:  # noqa: BLE001 -- isolate failures at the IPC boundary
-                result = {'ok': False, 'error': str(exc)}
+            except BackupError as exc:
+                result = {'ok': False, 'code': exc.code, 'error': str(exc)}
+            except Exception:
+                reference = uuid.uuid4().hex[:12]
+                logger.exception('Proton service failure %s', reference)
+                result = {'ok': False, 'code': 'internal', 'error': f'Proton service failed; reference {reference}'}
             try:
                 self.wfile.write(json.dumps(result).encode() + b'\n')
             except BrokenPipeError:

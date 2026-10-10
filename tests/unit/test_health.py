@@ -278,14 +278,18 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(health.check_health('recovery'), 1)
 
     def test_auth_and_daemon_outages_have_distinct_incidents(self) -> None:
-        with patch.object(health, 'request', return_value={'state': 'signed-out'}) as request:
+        with patch.object(
+            health,
+            'request',
+            return_value=[{'enable': True, 'state': 'signed-in'}, {'enable': True, 'state': 'signed-out'}],
+        ) as request:
             self.assertEqual(health.check_health('auth'), 1)
             self.assertEqual(health.check_health('service'), 0)
             request.assert_called_with('status', timeout=5)
         with patch.object(health, 'request', side_effect=OSError('secret response')):
             self.assertEqual(health.check_health('service'), 1)
             self.assertEqual(health.check_health('auth'), 1)
-        with patch.object(health, 'request', return_value={'state': 'signed-in'}):
+        with patch.object(health, 'request', return_value=[{'enable': True, 'state': 'signed-in'}]):
             self.assertEqual(health.check_health('auth'), 0)
             self.assertEqual(health.check_health('service'), 0)
 

@@ -107,6 +107,9 @@ class GetStatusResponse(_message.Message):
     TRANSFER_ELAPSED_SECONDS_FIELD_NUMBER: _builtins.int
     PENDING_CONFIGURATION_FIELD_NUMBER: _builtins.int
     ACCOUNT_ERROR_FIELD_NUMBER: _builtins.int
+    ERROR_CODE_FIELD_NUMBER: _builtins.int
+    STARTED_AT_FIELD_NUMBER: _builtins.int
+    BACKENDS_FIELD_NUMBER: _builtins.int
     phase: _builtins.str
     running: _builtins.bool
     recovery_pending: _builtins.bool
@@ -120,6 +123,10 @@ class GetStatusResponse(_message.Message):
     transfer_elapsed_seconds: _builtins.int
     pending_configuration: _builtins.bool
     account_error: _builtins.str
+    error_code: _builtins.str
+    started_at: _builtins.str
+    @_builtins.property
+    def backends(self) -> _containers.RepeatedCompositeFieldContainer[Global___BackendStatus]: ...
     def __init__(
         self,
         *,
@@ -136,14 +143,102 @@ class GetStatusResponse(_message.Message):
         transfer_elapsed_seconds: _builtins.int = ...,
         pending_configuration: _builtins.bool = ...,
         account_error: _builtins.str = ...,
+        error_code: _builtins.str = ...,
+        started_at: _builtins.str = ...,
+        backends: _abc.Iterable[Global___BackendStatus] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["account_email", b"account_email", "account_error", b"account_error", "account_state", b"account_state", "authentication_url", b"authentication_url", "error", b"error", "last_success", b"last_success", "pending_configuration", b"pending_configuration", "phase", b"phase", "recovery_pending", b"recovery_pending", "running", b"running", "transfer_elapsed_seconds", b"transfer_elapsed_seconds", "transfer_file", b"transfer_file", "transfer_phase", b"transfer_phase"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["account_email", b"account_email", "account_error", b"account_error", "account_state", b"account_state", "authentication_url", b"authentication_url", "backends", b"backends", "error", b"error", "error_code", b"error_code", "last_success", b"last_success", "pending_configuration", b"pending_configuration", "phase", b"phase", "recovery_pending", b"recovery_pending", "running", b"running", "started_at", b"started_at", "transfer_elapsed_seconds", b"transfer_elapsed_seconds", "transfer_file", b"transfer_file", "transfer_phase", b"transfer_phase"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___GetStatusResponse: _TypeAlias = GetStatusResponse  # noqa: Y015
+
+@_typing.final
+class BackendStatus(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ID_FIELD_NUMBER: _builtins.int
+    KIND_FIELD_NUMBER: _builtins.int
+    NAME_FIELD_NUMBER: _builtins.int
+    ENABLED_FIELD_NUMBER: _builtins.int
+    STATE_FIELD_NUMBER: _builtins.int
+    EMAIL_FIELD_NUMBER: _builtins.int
+    AUTHENTICATION_URL_FIELD_NUMBER: _builtins.int
+    ERROR_FIELD_NUMBER: _builtins.int
+    TRANSFER_PHASE_FIELD_NUMBER: _builtins.int
+    TRANSFER_FILE_FIELD_NUMBER: _builtins.int
+    TRANSFER_ELAPSED_SECONDS_FIELD_NUMBER: _builtins.int
+    TRANSFER_PERCENT_FIELD_NUMBER: _builtins.int
+    id: _builtins.str
+    kind: _builtins.str
+    name: _builtins.str
+    enabled: _builtins.bool
+    state: _builtins.str
+    email: _builtins.str
+    authentication_url: _builtins.str
+    error: _builtins.str
+    transfer_phase: _builtins.str
+    transfer_file: _builtins.str
+    transfer_elapsed_seconds: _builtins.int
+    transfer_percent: _builtins.int
+    def __init__(
+        self,
+        *,
+        id: _builtins.str = ...,
+        kind: _builtins.str = ...,
+        name: _builtins.str = ...,
+        enabled: _builtins.bool = ...,
+        state: _builtins.str = ...,
+        email: _builtins.str = ...,
+        authentication_url: _builtins.str = ...,
+        error: _builtins.str = ...,
+        transfer_phase: _builtins.str = ...,
+        transfer_file: _builtins.str = ...,
+        transfer_elapsed_seconds: _builtins.int = ...,
+        transfer_percent: _builtins.int | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_transfer_percent", b"_transfer_percent", "transfer_percent", b"transfer_percent"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_transfer_percent", b"_transfer_percent", "authentication_url", b"authentication_url", "email", b"email", "enabled", b"enabled", "error", b"error", "id", b"id", "kind", b"kind", "name", b"name", "state", b"state", "transfer_elapsed_seconds", b"transfer_elapsed_seconds", "transfer_file", b"transfer_file", "transfer_percent", b"transfer_percent", "transfer_phase", b"transfer_phase"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__transfer_percent: _TypeAlias = _typing.Literal["transfer_percent"]  # noqa: Y015
+    _WhichOneofArgType__transfer_percent: _TypeAlias = _typing.Literal["_transfer_percent", b"_transfer_percent"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__transfer_percent) -> _WhichOneofReturnType__transfer_percent | None: ...
+
+Global___BackendStatus: _TypeAlias = BackendStatus  # noqa: Y015
+
+@_typing.final
+class Destination(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ID_FIELD_NUMBER: _builtins.int
+    KIND_FIELD_NUMBER: _builtins.int
+    NAME_FIELD_NUMBER: _builtins.int
+    ENABLED_FIELD_NUMBER: _builtins.int
+    ROOT_FIELD_NUMBER: _builtins.int
+    id: _builtins.str
+    kind: _builtins.str
+    name: _builtins.str
+    enabled: _builtins.bool
+    root: _builtins.str
+    def __init__(
+        self,
+        *,
+        id: _builtins.str = ...,
+        kind: _builtins.str = ...,
+        name: _builtins.str = ...,
+        enabled: _builtins.bool = ...,
+        root: _builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["enabled", b"enabled", "id", b"id", "kind", b"kind", "name", b"name", "root", b"root"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___Destination: _TypeAlias = Destination  # noqa: Y015
 
 @_typing.final
 class Configuration(_message.Message):
@@ -159,6 +254,7 @@ class Configuration(_message.Message):
     TRANSFER_TIMEOUT_SECONDS_FIELD_NUMBER: _builtins.int
     STAGING_PATH_FIELD_NUMBER: _builtins.int
     REMOTE_PATH_FIELD_NUMBER: _builtins.int
+    DESTINATIONS_FIELD_NUMBER: _builtins.int
     enabled: _builtins.bool
     instance_id: _builtins.str
     schedule_hour: _builtins.int
@@ -169,6 +265,8 @@ class Configuration(_message.Message):
     transfer_timeout_seconds: _builtins.int
     staging_path: _builtins.str
     remote_path: _builtins.str
+    @_builtins.property
+    def destinations(self) -> _containers.RepeatedCompositeFieldContainer[Global___Destination]: ...
     def __init__(
         self,
         *,
@@ -182,10 +280,11 @@ class Configuration(_message.Message):
         transfer_timeout_seconds: _builtins.int = ...,
         staging_path: _builtins.str = ...,
         remote_path: _builtins.str = ...,
+        destinations: _abc.Iterable[Global___Destination] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["command_timeout_seconds", b"command_timeout_seconds", "container_stop_timeout_seconds", b"container_stop_timeout_seconds", "enabled", b"enabled", "instance_id", b"instance_id", "minimum_free_bytes", b"minimum_free_bytes", "remote_path", b"remote_path", "schedule_hour", b"schedule_hour", "schedule_minute", b"schedule_minute", "staging_path", b"staging_path", "transfer_timeout_seconds", b"transfer_timeout_seconds"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["command_timeout_seconds", b"command_timeout_seconds", "container_stop_timeout_seconds", b"container_stop_timeout_seconds", "destinations", b"destinations", "enabled", b"enabled", "instance_id", b"instance_id", "minimum_free_bytes", b"minimum_free_bytes", "remote_path", b"remote_path", "schedule_hour", b"schedule_hour", "schedule_minute", b"schedule_minute", "staging_path", b"staging_path", "transfer_timeout_seconds", b"transfer_timeout_seconds"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -285,6 +384,7 @@ class BackupSet(_message.Message):
     REMOTE_KEEP_FIELD_NUMBER: _builtins.int
     CONTAINER_IDS_FIELD_NUMBER: _builtins.int
     COMPOSE_PROJECTS_FIELD_NUMBER: _builtins.int
+    COMPOSE_APPLICATIONS_FIELD_NUMBER: _builtins.int
     id: _builtins.str
     name: _builtins.str
     enabled: _builtins.bool
@@ -299,6 +399,8 @@ class BackupSet(_message.Message):
     def container_ids(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
     @_builtins.property
     def compose_projects(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    @_builtins.property
+    def compose_applications(self) -> _containers.RepeatedCompositeFieldContainer[Global___ComposeApplication]: ...
     def __init__(
         self,
         *,
@@ -312,14 +414,46 @@ class BackupSet(_message.Message):
         remote_keep: _builtins.int = ...,
         container_ids: _abc.Iterable[_builtins.str] | None = ...,
         compose_projects: _abc.Iterable[_builtins.str] | None = ...,
+        compose_applications: _abc.Iterable[Global___ComposeApplication] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["compose_projects", b"compose_projects", "container_ids", b"container_ids", "enabled", b"enabled", "exclusions", b"exclusions", "id", b"id", "local_keep", b"local_keep", "name", b"name", "paths", b"paths", "remote_keep", b"remote_keep", "stop_all_containers", b"stop_all_containers"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["compose_applications", b"compose_applications", "compose_projects", b"compose_projects", "container_ids", b"container_ids", "enabled", b"enabled", "exclusions", b"exclusions", "id", b"id", "local_keep", b"local_keep", "name", b"name", "paths", b"paths", "remote_keep", b"remote_keep", "stop_all_containers", b"stop_all_containers"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___BackupSet: _TypeAlias = BackupSet  # noqa: Y015
+
+@_typing.final
+class ComposeApplication(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    PROJECT_FIELD_NUMBER: _builtins.int
+    DEFINITIONS_FIELD_NUMBER: _builtins.int
+    ENV_FILES_FIELD_NUMBER: _builtins.int
+    SECRET_FILES_FIELD_NUMBER: _builtins.int
+    project: _builtins.str
+    @_builtins.property
+    def definitions(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    @_builtins.property
+    def env_files(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    @_builtins.property
+    def secret_files(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    def __init__(
+        self,
+        *,
+        project: _builtins.str = ...,
+        definitions: _abc.Iterable[_builtins.str] | None = ...,
+        env_files: _abc.Iterable[_builtins.str] | None = ...,
+        secret_files: _abc.Iterable[_builtins.str] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["definitions", b"definitions", "env_files", b"env_files", "project", b"project", "secret_files", b"secret_files"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___ComposeApplication: _TypeAlias = ComposeApplication  # noqa: Y015
 
 @_typing.final
 class ListSetsRequest(_message.Message):
@@ -448,11 +582,13 @@ class Job(_message.Message):
     STATE_FIELD_NUMBER: _builtins.int
     MESSAGE_FIELD_NUMBER: _builtins.int
     SEQUENCE_FIELD_NUMBER: _builtins.int
+    FAILURE_CODE_FIELD_NUMBER: _builtins.int
     id: _builtins.str
     operation: Global___Operation.ValueType
     state: Global___JobState.ValueType
     message: _builtins.str
     sequence: _builtins.int
+    failure_code: _builtins.str
     def __init__(
         self,
         *,
@@ -461,10 +597,11 @@ class Job(_message.Message):
         state: Global___JobState.ValueType = ...,
         message: _builtins.str = ...,
         sequence: _builtins.int = ...,
+        failure_code: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["id", b"id", "message", b"message", "operation", b"operation", "sequence", b"sequence", "state", b"state"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["failure_code", b"failure_code", "id", b"id", "message", b"message", "operation", b"operation", "sequence", b"sequence", "state", b"state"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -478,8 +615,10 @@ class StartOperationRequest(_message.Message):
     REQUEST_ID_FIELD_NUMBER: _builtins.int
     INSPECT_ARCHIVE_FIELD_NUMBER: _builtins.int
     EXTRACT_FILES_FIELD_NUMBER: _builtins.int
+    DESTINATION_ID_FIELD_NUMBER: _builtins.int
     operation: Global___Operation.ValueType
     request_id: _builtins.str
+    destination_id: _builtins.str
     @_builtins.property
     def inspect_archive(self) -> Global___ArchiveReference: ...
     @_builtins.property
@@ -491,10 +630,11 @@ class StartOperationRequest(_message.Message):
         request_id: _builtins.str = ...,
         inspect_archive: Global___ArchiveReference | None = ...,
         extract_files: Global___FileExtraction | None = ...,
+        destination_id: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["extract_files", b"extract_files", "inspect_archive", b"inspect_archive", "parameters", b"parameters"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["extract_files", b"extract_files", "inspect_archive", b"inspect_archive", "operation", b"operation", "parameters", b"parameters", "request_id", b"request_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["destination_id", b"destination_id", "extract_files", b"extract_files", "inspect_archive", b"inspect_archive", "operation", b"operation", "parameters", b"parameters", "request_id", b"request_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType_parameters: _TypeAlias = _typing.Literal["inspect_archive", "extract_files"]  # noqa: Y015
     _WhichOneofArgType_parameters: _TypeAlias = _typing.Literal["parameters", b"parameters"]  # noqa: Y015
@@ -736,17 +876,20 @@ class BrowseBackupsRequest(_message.Message):
 
     INSTANCE_ID_FIELD_NUMBER: _builtins.int
     SET_ID_FIELD_NUMBER: _builtins.int
+    DESTINATION_ID_FIELD_NUMBER: _builtins.int
     instance_id: _builtins.str
     set_id: _builtins.str
+    destination_id: _builtins.str
     def __init__(
         self,
         *,
         instance_id: _builtins.str | None = ...,
         set_id: _builtins.str | None = ...,
+        destination_id: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["_instance_id", b"_instance_id", "_set_id", b"_set_id", "instance_id", b"instance_id", "set_id", b"set_id"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_instance_id", b"_instance_id", "_set_id", b"_set_id", "instance_id", b"instance_id", "set_id", b"set_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_instance_id", b"_instance_id", "_set_id", b"_set_id", "destination_id", b"destination_id", "instance_id", b"instance_id", "set_id", b"set_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__instance_id: _TypeAlias = _typing.Literal["instance_id"]  # noqa: Y015
     _WhichOneofArgType__instance_id: _TypeAlias = _typing.Literal["_instance_id", b"_instance_id"]  # noqa: Y015
@@ -819,19 +962,22 @@ class ArchiveReference(_message.Message):
     INSTANCE_ID_FIELD_NUMBER: _builtins.int
     SET_ID_FIELD_NUMBER: _builtins.int
     NAME_FIELD_NUMBER: _builtins.int
+    DESTINATION_ID_FIELD_NUMBER: _builtins.int
     instance_id: _builtins.str
     set_id: _builtins.str
     name: _builtins.str
+    destination_id: _builtins.str
     def __init__(
         self,
         *,
         instance_id: _builtins.str = ...,
         set_id: _builtins.str = ...,
         name: _builtins.str = ...,
+        destination_id: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["instance_id", b"instance_id", "name", b"name", "set_id", b"set_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["destination_id", b"destination_id", "instance_id", b"instance_id", "name", b"name", "set_id", b"set_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -923,24 +1069,120 @@ class GetArchiveResponse(_message.Message):
     MEMBERS_FIELD_NUMBER: _builtins.int
     TOTAL_FIELD_NUMBER: _builtins.int
     NEXT_OFFSET_FIELD_NUMBER: _builtins.int
+    COMPOSE_FIELD_NUMBER: _builtins.int
     total: _builtins.int
     next_offset: _builtins.int
     @_builtins.property
     def members(self) -> _containers.RepeatedCompositeFieldContainer[Global___ArchiveMember]: ...
+    @_builtins.property
+    def compose(self) -> _containers.RepeatedCompositeFieldContainer[Global___ComposeProjectSnapshot]: ...
     def __init__(
         self,
         *,
         members: _abc.Iterable[Global___ArchiveMember] | None = ...,
         total: _builtins.int = ...,
         next_offset: _builtins.int = ...,
+        compose: _abc.Iterable[Global___ComposeProjectSnapshot] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["members", b"members", "next_offset", b"next_offset", "total", b"total"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["compose", b"compose", "members", b"members", "next_offset", b"next_offset", "total", b"total"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___GetArchiveResponse: _TypeAlias = GetArchiveResponse  # noqa: Y015
+
+@_typing.final
+class ComposeProjectSnapshot(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    PROJECT_FIELD_NUMBER: _builtins.int
+    DEFINITIONS_FIELD_NUMBER: _builtins.int
+    ENV_FILES_FIELD_NUMBER: _builtins.int
+    SECRET_FILES_FIELD_NUMBER: _builtins.int
+    SERVICES_FIELD_NUMBER: _builtins.int
+    project: _builtins.str
+    @_builtins.property
+    def definitions(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    @_builtins.property
+    def env_files(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    @_builtins.property
+    def secret_files(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]: ...
+    @_builtins.property
+    def services(self) -> _containers.RepeatedCompositeFieldContainer[Global___ComposeServiceSnapshot]: ...
+    def __init__(
+        self,
+        *,
+        project: _builtins.str = ...,
+        definitions: _abc.Iterable[_builtins.str] | None = ...,
+        env_files: _abc.Iterable[_builtins.str] | None = ...,
+        secret_files: _abc.Iterable[_builtins.str] | None = ...,
+        services: _abc.Iterable[Global___ComposeServiceSnapshot] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["definitions", b"definitions", "env_files", b"env_files", "project", b"project", "secret_files", b"secret_files", "services", b"services"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___ComposeProjectSnapshot: _TypeAlias = ComposeProjectSnapshot  # noqa: Y015
+
+@_typing.final
+class ComposeServiceSnapshot(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    SERVICE_FIELD_NUMBER: _builtins.int
+    IMAGE_FIELD_NUMBER: _builtins.int
+    PINNED_FIELD_NUMBER: _builtins.int
+    REPLICAS_FIELD_NUMBER: _builtins.int
+    BINDS_FIELD_NUMBER: _builtins.int
+    service: _builtins.str
+    image: _builtins.str
+    pinned: _builtins.str
+    replicas: _builtins.int
+    @_builtins.property
+    def binds(self) -> _containers.RepeatedCompositeFieldContainer[Global___ComposeBindSnapshot]: ...
+    def __init__(
+        self,
+        *,
+        service: _builtins.str = ...,
+        image: _builtins.str = ...,
+        pinned: _builtins.str = ...,
+        replicas: _builtins.int = ...,
+        binds: _abc.Iterable[Global___ComposeBindSnapshot] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["binds", b"binds", "image", b"image", "pinned", b"pinned", "replicas", b"replicas", "service", b"service"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___ComposeServiceSnapshot: _TypeAlias = ComposeServiceSnapshot  # noqa: Y015
+
+@_typing.final
+class ComposeBindSnapshot(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    SOURCE_FIELD_NUMBER: _builtins.int
+    TARGET_FIELD_NUMBER: _builtins.int
+    READ_ONLY_FIELD_NUMBER: _builtins.int
+    source: _builtins.str
+    target: _builtins.str
+    read_only: _builtins.bool
+    def __init__(
+        self,
+        *,
+        source: _builtins.str = ...,
+        target: _builtins.str = ...,
+        read_only: _builtins.bool = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["read_only", b"read_only", "source", b"source", "target", b"target"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___ComposeBindSnapshot: _TypeAlias = ComposeBindSnapshot  # noqa: Y015
 
 @_typing.final
 class CancelJobRequest(_message.Message):
@@ -1347,3 +1589,22 @@ class BrokerError(_message.Message):
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___BrokerError: _TypeAlias = BrokerError  # noqa: Y015
+
+@_typing.final
+class FailureDetail(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    CODE_FIELD_NUMBER: _builtins.int
+    code: _builtins.str
+    def __init__(
+        self,
+        *,
+        code: _builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["code", b"code"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___FailureDetail: _TypeAlias = FailureDetail  # noqa: Y015

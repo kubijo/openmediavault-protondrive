@@ -20,6 +20,7 @@ def state_dir(args: list[str]) -> Path:
 
 
 def boot(args: list[str]) -> None:
+    print('Prepare disposable VM', flush=True)
     state = state_dir(args)
     metadata = state / 'instance/instance.json'
     metadata.parent.mkdir(parents=True, exist_ok=True)

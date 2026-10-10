@@ -23,6 +23,8 @@ class AuthTests(unittest.TestCase):
             (False, True, 'completed', 'recovery-required'),
             (True, True, 'archiving', 'archiving'),
             (False, False, 'archiving', 'interrupted'),
+            (False, False, 'capturing-compose', 'interrupted'),
+            (False, False, 'pulling-compose-images', 'interrupted'),
             (False, False, 'recovery-failed', 'interrupted'),
             (False, False, 'completed', 'completed'),
             (False, False, 'failed', 'failed'),

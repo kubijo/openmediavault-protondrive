@@ -9,6 +9,7 @@ from typing import Protocol
 
 from .common import STATE, BackupError, atomic_json, sync_directory
 from .json_data import decode
+from .models import RecoveryRecord
 
 
 class DockerCommand(Protocol):
@@ -60,7 +61,7 @@ class Recovery:
                 if self.command('inspect', '--format', '{{.State.Running}}', cid).strip() != 'true':
                     raise BackupError('Container did not remain running')
                 remaining.remove(cid)
-                atomic_json(self.path, {'ids': remaining, 'stop_deadline': 0})
+                atomic_json(self.path, RecoveryRecord(ids=remaining))
             except (BackupError, subprocess.TimeoutExpired) as exc:
                 failures.append(f'{cid}: {exc}')
         if failures:
@@ -77,10 +78,10 @@ class Recovery:
             if any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in selected):
                 raise BackupError('Invalid selected Docker container')
             ids = [cid for cid in ids if cid in selected]
-        atomic_json(self.path, {'ids': ids, 'stop_deadline': 0})
+        atomic_json(self.path, RecoveryRecord(ids=ids))
         for cid in ids:
-            atomic_json(self.path, {'ids': ids, 'stop_deadline': time.time() + timeout + 5})
+            atomic_json(self.path, RecoveryRecord(ids=ids, stop_deadline=time.time() + timeout + 5))
             self.command('stop', '--time', str(timeout), cid)
-            atomic_json(self.path, {'ids': ids, 'stop_deadline': 0})
+            atomic_json(self.path, RecoveryRecord(ids=ids))
         if any(self.command('inspect', '--format', '{{.State.Running}}', cid).strip() != 'false' for cid in ids):
             raise BackupError('A container is still running; archive cancelled')

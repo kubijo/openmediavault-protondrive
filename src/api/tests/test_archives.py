@@ -33,16 +33,25 @@ def private_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_expected_remote_failure_is_actionable_at_the_broker_boundary(tmp_path: Path) -> None:
     controller = Controller(Store(tmp_path / 'jobs.sqlite3'), OMV())
     try:
-        with patch('protondrive_api.archives.request', side_effect=BackupError('Proton service is busy')):
+        with patch('protondrive_api.archives.request', side_effect=BackupError('Proton service is busy', code='busy')):
             response = controller.respond(wire.BrokerRequest(actor='admin', backups=wire.BrowseBackupsRequest()))
-        assert response.error.code == 'failed_precondition'
+        assert response.error.code == 'busy'
         assert response.error.message == 'Proton service is busy'
     finally:
         controller.close()
 
 
-@pytest.mark.parametrize('corrupt', [False, True])
-def test_inspection_to_extraction_checks_real_archive_bytes(tmp_path: Path, corrupt: bool) -> None:
+def test_download_discard_retries_by_busy_code_not_message() -> None:
+    with patch(
+        'protondrive_api.archives.request',
+        side_effect=[BackupError('New busy wording', code='busy'), True],
+    ) as remote:
+        Archives.discard_download(str(uuid4()))
+    assert remote.call_count == 2
+
+
+@pytest.mark.parametrize('corrupt,compose', [(False, False), (False, True), (True, False)])
+def test_inspection_to_extraction_checks_real_archive_bytes(tmp_path: Path, corrupt: bool, compose: bool) -> None:
     """Only the daemon download is faked; checksum, zstd, tar and journal are real."""
     config, item = configuration()
     config['minimumfreebytes'] = 0
@@ -53,6 +62,14 @@ def test_inspection_to_extraction_checks_real_archive_bytes(tmp_path: Path, corr
             member.uid, member.gid = os.geteuid(), os.getegid()
             member.size = len(name)
             archive.addfile(member, io.BytesIO(name.encode()))
+        if compose:
+            for name in ['srv/app/compose.yaml', 'srv/app/.env']:
+                member = tarfile.TarInfo(name)
+                member.size = 1
+                archive.addfile(member, io.BytesIO(b'x'))
+            directory = tarfile.TarInfo('srv/app/data')
+            directory.type = tarfile.DIRTYPE
+            archive.addfile(directory)
     packed = subprocess.run(['zstd', '-c', '--', str(source)], check=True, capture_output=True).stdout
     request = wire.StartOperationRequest(
         request_id=str(uuid4()),
@@ -66,7 +83,7 @@ def test_inspection_to_extraction_checks_real_archive_bytes(tmp_path: Path, corr
     folder.mkdir(parents=True)
     (folder / request.inspect_archive.name).write_bytes(packed)
     manifest: Manifest = {
-        'format': 1,
+        'format': 2 if compose else 1,
         'instanceuuid': request.inspect_archive.instance_id,
         'setuuid': item['uuid'],
         'archive': request.inspect_archive.name,
@@ -74,6 +91,24 @@ def test_inspection_to_extraction_checks_real_archive_bytes(tmp_path: Path, corr
         'size': len(packed),
         'sha256': '0' * 64 if corrupt else hashlib.sha256(packed).hexdigest(),
     }
+    if compose:
+        manifest['compose'] = [
+            {
+                'project': 'app',
+                'definitions': ['/srv/app/compose.yaml'],
+                'envfiles': ['/srv/app/.env'],
+                'secretfiles': [],
+                'services': [
+                    {
+                        'service': 'web',
+                        'image': 'nginx:stable',
+                        'pinned': 'docker.io/library/nginx@sha256:' + 'a' * 64,
+                        'replicas': 2,
+                        'binds': [{'source': '/srv/app/data', 'target': '/data', 'read_only': False}],
+                    }
+                ],
+            }
+        ]
     calls: list[str] = []
 
     def remote(operation: str, **_parameters: object) -> Manifest | dict[str, JSONValue]:
@@ -102,7 +137,11 @@ def test_inspection_to_extraction_checks_real_archive_bytes(tmp_path: Path, corr
             controller.inspect(request.request_id, request.inspect_archive, lambda _: None, OperationControl())
             store.update(request.request_id, wire.JOB_STATE_SUCCEEDED, 'Completed')
             assert controller.list().archives[0].source == request.inspect_archive
-            assert controller.get(wire.GetArchiveRequest(inspection_id=request.request_id)).total == 2
+            inspected = controller.get(wire.GetArchiveRequest(inspection_id=request.request_id))
+            assert inspected.total == (5 if compose else 2)
+            assert len(inspected.compose) == int(compose)
+            if compose:
+                assert inspected.compose[0].services[0].replicas == 2
             extraction = wire.FileExtraction(
                 inspection_id=request.request_id, paths=['selected.txt'], destination=str(tmp_path / 'output')
             )
