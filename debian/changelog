@@ -1,0 +1,5 @@
+openmediavault-cloud-backup (7.0.0) unstable; urgency=medium
+
+  * OMV 7 cloud backup plugin with a Nix-pinned Proton Drive CLI.
+
+ -- OMV Cloud Backup contributors <kubijo@users.noreply.github.com>  Thu, 01 Oct 2026 12:00:00 +0300

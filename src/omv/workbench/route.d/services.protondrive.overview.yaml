@@ -1,0 +1,7 @@
+version: '1.0'
+type: route
+data:
+  url: /services/protondrive/overview
+  title: _("Overview")
+  editing: true
+  component: omv-services-protondrive-status-form-page

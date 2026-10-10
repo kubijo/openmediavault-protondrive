@@ -1,0 +1,7 @@
+version: '1.0'
+type: route
+data:
+  url: /services/protondrive/sets/edit/:uuid
+  title: _("Edit")
+  editing: true
+  component: omv-services-protondrive-set-form-page

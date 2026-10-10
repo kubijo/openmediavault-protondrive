@@ -1,0 +1,76 @@
+{
+  "type": "rpc",
+  "id": "rpc.protondrive.set",
+  "params": {
+    "type": "object",
+    "properties": {
+      "enable": {
+        "type": "boolean",
+        "default": false,
+        "required": true
+      },
+      "schedulehour": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 23,
+        "default": 3,
+        "required": true
+      },
+      "scheduleminute": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 59,
+        "default": 0,
+        "required": true
+      },
+      "stagingpath": {
+        "type": "string",
+        "default": "/data/.omv-protondrive",
+        "required": true
+      },
+      "remotepath": {
+        "type": "string",
+        "default": "/my-files/open-media-vault-proton-backup",
+        "required": true
+      },
+      "destinations": {
+        "type": "string",
+        "default": ""
+      },
+      "instanceuuid": {
+        "type": "string",
+        "format": "uuidv4",
+        "required": true
+      },
+      "minimumfreebytes": {
+        "type": "integer",
+        "minimum": 1048576,
+        "maximum": 9007199254740991,
+        "default": 1073741824,
+        "required": true
+      },
+      "containerstoptimeout": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 600,
+        "default": 120,
+        "required": true
+      },
+      "commandtimeout": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 600,
+        "default": 180,
+        "required": true
+      },
+      "transfertimeout": {
+        "type": "integer",
+        "minimum": 60,
+        "maximum": 86400,
+        "default": 86400,
+        "required": true
+      }
+    },
+    "additionalProperties": false
+  }
+}

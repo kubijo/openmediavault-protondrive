@@ -1,0 +1,19 @@
+[Unit]
+Description=Proton Drive privileged job controller
+After=openmediavault-engined.service omv-protondrive-recover.service
+Requires=openmediavault-engined.service
+
+[Service]
+Type=simple
+User=root
+Group=protondrive-api
+RuntimeDirectory=omv-protondrive-controller
+RuntimeDirectoryMode=0750
+UMask=0077
+Environment=PYTHONPATH=/usr/share/openmediavault-protondrive:/usr/lib/openmediavault-protondrive/api
+ExecStart=/usr/bin/python3 -m protondrive_api.broker
+Restart=on-failure
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

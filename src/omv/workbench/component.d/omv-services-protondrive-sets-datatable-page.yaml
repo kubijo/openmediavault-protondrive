@@ -1,0 +1,57 @@
+version: '1.0'
+type: component
+data:
+  name: omv-services-protondrive-sets-datatable-page
+  type: datatablePage
+  config:
+    autoReload: false
+    hasSearchField: true
+    stateId: 4b2a46f7-f3d3-4a8e-96a3-4532e9fc8e40
+    store:
+      proxy:
+        service: ProtonDrive
+        get:
+          method: getSetList
+      sorters:
+        - dir: asc
+          prop: name
+    columns:
+      - name: _("Enabled")
+        prop: enable
+        cellTemplateName: checkIcon
+        headerClass: protondrive-sets-column
+        flexGrow: 1
+      - name: _("Name")
+        prop: name
+        sortable: true
+        headerClass: protondrive-sets-column
+        flexGrow: 1
+      - name: _("Sources")
+        prop: paths
+        headerClass: protondrive-sets-column
+        flexGrow: 2
+      - name: _("Local copies")
+        prop: localkeep
+        headerClass: protondrive-sets-column
+        flexGrow: 1
+      - name: _("Remote copies")
+        prop: remotekeep
+        headerClass: protondrive-sets-column
+        flexGrow: 1
+    actions:
+      - template: create
+        execute:
+          type: url
+          url: /services/protondrive/sets/create
+      - template: edit
+        execute:
+          type: url
+          url: '/services/protondrive/sets/edit/{{ _selected[0].uuid }}'
+      - template: delete
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: deleteSet
+            params:
+              uuid: '{{ uuid }}'

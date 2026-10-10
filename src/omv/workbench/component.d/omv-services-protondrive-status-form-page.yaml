@@ -1,0 +1,159 @@
+version: '1.0'
+type: component
+data:
+  name: omv-services-protondrive-status-form-page
+  type: formPage
+  config:
+    title: _("Proton Drive")
+    subTitle: _("Account and backup status")
+    autoReload: 3000
+    request:
+      service: ProtonDrive
+      get:
+        method: getStatus
+    fields:
+      - type: hidden
+        name: authstate
+        value: loading
+      - type: hidden
+        name: authurl
+      - type: hidden
+        name: autherror
+      - type: hidden
+        name: accountemail
+      - type: hidden
+        name: accountorganization
+      - type: hidden
+        name: phase
+      - type: hidden
+        name: message
+      - type: hidden
+        name: transferphase
+      - type: hidden
+        name: transferfile
+      - type: hidden
+        name: transferelapsed
+      - type: hidden
+        name: lastsuccess
+      - type: hidden
+        name: details
+      - type: hidden
+        name: error
+      - type: hidden
+        name: running
+        value: false
+      - type: hidden
+        name: recoverypending
+        value: false
+      - type: card
+        name: accountstatus
+        textFile: account.html.njk
+      - type: card
+        name: backupstatus
+        textFile: backup.html.njk
+    buttons:
+      - text: _("Settings")
+        execute:
+          type: url
+          url: /services/protondrive/settings
+      - text: _("Backup sets")
+        execute:
+          type: url
+          url: /services/protondrive/sets
+      - text: _("Sign in")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0: {operator: falsy, arg0: {prop: running}}
+          arg1:
+            operator: in
+            arg0: {prop: authstate}
+            arg1: [signed-out, error]
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: startAuth
+            progressMessage: _("Starting Proton sign-in…")
+            successNotification: _("Sign-in started. Follow the link in the Account section.")
+      - text: _("Cancel sign-in")
+        disabled: true
+        enabledConstraint:
+          operator: eq
+          arg0: {prop: authstate}
+          arg1: signing-in
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: cancelAuth
+            progressMessage: _("Cancelling sign-in…")
+      - text: _("Sign out")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0: {operator: falsy, arg0: {prop: running}}
+          arg1: {operator: eq, arg0: {prop: authstate}, arg1: signed-in}
+        execute:
+          type: request
+          request:
+            service: ProtonDrive
+            method: logout
+            progressMessage: _("Signing out…")
+      - text: _("Run now")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0:
+            operator: and
+            arg0: {operator: falsy, arg0: {prop: running}}
+            arg1: {operator: falsy, arg0: {prop: recoverypending}}
+          arg1: {operator: eq, arg0: {prop: authstate}, arg1: signed-in}
+        execute:
+          type: taskDialog
+          taskDialog:
+            config:
+              title: _("Proton Drive backup")
+              startOnInit: true
+              buttons:
+                stop:
+                  hidden: true
+              request:
+                service: ProtonDrive
+                method: runNow
+      - text: _("Cancel backup")
+        disabled: true
+        enabledConstraint:
+          operator: truthy
+          arg0:
+            prop: running
+        execute:
+          type: taskDialog
+          taskDialog:
+            config:
+              title: _("Cancel backup and recover containers")
+              startOnInit: true
+              buttons:
+                stop:
+                  hidden: true
+              request:
+                service: ProtonDrive
+                method: cancelRun
+      - text: _("Recover containers")
+        disabled: true
+        enabledConstraint:
+          operator: and
+          arg0: {operator: falsy, arg0: {prop: running}}
+          arg1: {operator: truthy, arg0: {prop: recoverypending}}
+        execute:
+          type: taskDialog
+          taskDialog:
+            config:
+              title: _("Recover containers")
+              startOnInit: true
+              buttons:
+                stop:
+                  hidden: true
+              request:
+                service: ProtonDrive
+                method: recoverContainers

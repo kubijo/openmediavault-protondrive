@@ -1,0 +1,27 @@
+[Unit]
+Description=OMV Proton Drive private session
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=protondrive
+Group=protondrive
+ExecStart=/usr/share/openmediavault-protondrive/session.sh
+RuntimeDirectory=omv-protondrive
+RuntimeDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+SyslogIdentifier=omv-protondrive
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/openmediavault-protondrive/proton
+ReadOnlyPaths={{ config.stagingpath | json }}
+
+[Install]
+WantedBy=multi-user.target

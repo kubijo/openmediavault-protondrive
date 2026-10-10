@@ -1,0 +1,89 @@
+version: '1.0'
+type: component
+data:
+  name: omv-services-protondrive-settings-form-page
+  type: formPage
+  config:
+    request:
+      service: ProtonDrive
+      get:
+        method: get
+      post:
+        method: set
+    fields:
+      - type: hidden
+        name: instanceuuid
+      - type: checkbox
+        name: enable
+        label: _("Enable scheduled backups")
+        value: false
+      - type: numberInput
+        name: schedulehour
+        label: _("Hour (NAS timezone)")
+        value: 3
+        validators:
+          min: 0
+          max: 23
+          required: true
+      - type: numberInput
+        name: scheduleminute
+        label: _("Minute")
+        value: 0
+        validators:
+          min: 0
+          max: 59
+          required: true
+      - type: textInput
+        name: stagingpath
+        label: _("Local staging directory")
+        value: /data/.omv-protondrive
+        validators:
+          required: true
+      - type: textInput
+        name: remotepath
+        label: _("Proton Drive root folder")
+        hint: _("One folder directly under /my-files. Change its name here to use a different destination.")
+        value: /my-files/open-media-vault-proton-backup
+        validators:
+          required: true
+          pattern: '^/my-files/(?!\.{1,2}$)(?!-)[A-Za-z0-9 _.-]+$'
+      - type: numberInput
+        name: minimumfreebytes
+        label: _("Minimum free staging space (bytes)")
+        value: 1073741824
+        validators:
+          min: 1048576
+          required: true
+      - type: numberInput
+        name: containerstoptimeout
+        label: _("Container stop timeout (seconds)")
+        value: 120
+        validators:
+          min: 1
+          max: 600
+          required: true
+      - type: numberInput
+        name: commandtimeout
+        label: _("Proton command timeout (seconds)")
+        value: 180
+        validators:
+          min: 1
+          max: 600
+          required: true
+      - type: numberInput
+        name: transfertimeout
+        label: _("Transfer timeout (seconds)")
+        value: 86400
+        validators:
+          min: 60
+          max: 86400
+          required: true
+    buttons:
+      - template: cancel
+        execute:
+          type: url
+          url: /services/protondrive
+      - template: submit
+        execute:
+          type: url
+          url: /services/protondrive

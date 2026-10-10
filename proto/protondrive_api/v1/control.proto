@@ -1,0 +1,389 @@
+syntax = "proto3";
+
+package protondrive_api.v1;
+
+import "buf/validate/validate.proto";
+
+service ControlService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
+  rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
+  rpc ListSets(ListSetsRequest) returns (ListSetsResponse);
+  rpc SaveSet(SaveSetRequest) returns (SaveSetResponse);
+  rpc DeleteSet(DeleteSetRequest) returns (DeleteSetResponse);
+  rpc StartOperation(StartOperationRequest) returns (StartOperationResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc WatchJob(WatchJobRequest) returns (stream WatchJobResponse);
+  rpc BrowseDirectories(BrowseDirectoriesRequest) returns (BrowseDirectoriesResponse);
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc BrowseBackups(BrowseBackupsRequest) returns (BrowseBackupsResponse);
+  rpc GetArchive(GetArchiveRequest) returns (GetArchiveResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc PreviewExtraction(PreviewExtractionRequest) returns (PreviewExtractionResponse);
+  rpc ReleaseArchive(ReleaseArchiveRequest) returns (ReleaseArchiveResponse);
+  rpc ListArchives(ListArchivesRequest) returns (ListArchivesResponse);
+}
+
+message GetStatusRequest {}
+message GetStatusResponse {
+  string phase = 1;
+  bool running = 2;
+  bool recovery_pending = 3;
+  string last_success = 4;
+  string error = 5;
+  string account_state = 6;
+  string account_email = 7;
+  string authentication_url = 8;
+  string transfer_phase = 9;
+  string transfer_file = 10;
+  uint64 transfer_elapsed_seconds = 11;
+  bool pending_configuration = 12;
+  string account_error = 13;
+  string error_code = 14;
+  string started_at = 15;
+  repeated BackendStatus backends = 16;
+}
+
+message BackendStatus {
+  string id = 1;
+  string kind = 2;
+  string name = 3;
+  bool enabled = 4;
+  string state = 5;
+  string email = 6;
+  string authentication_url = 7;
+  string error = 8;
+  string transfer_phase = 9;
+  string transfer_file = 10;
+  uint64 transfer_elapsed_seconds = 11;
+  optional uint32 transfer_percent = 12 [(buf.validate.field).uint32.lte = 100];
+}
+
+message Destination {
+  string id = 1 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}$"];
+  string kind = 2 [(buf.validate.field).string.min_len = 1];
+  string name = 3 [(buf.validate.field).string.min_len = 1];
+  bool enabled = 4;
+  string root = 5 [(buf.validate.field).string.min_len = 1];
+}
+
+message Configuration {
+  bool enabled = 1;
+  string instance_id = 2 [(buf.validate.field).string.uuid = true];
+  uint32 schedule_hour = 3 [(buf.validate.field).uint32.lte = 23];
+  uint32 schedule_minute = 4 [(buf.validate.field).uint32.lte = 59];
+  uint64 minimum_free_bytes = 5 [(buf.validate.field).uint64.gte = 1048576];
+  uint32 container_stop_timeout_seconds = 6 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 600
+  }];
+  uint32 command_timeout_seconds = 7 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 600
+  }];
+  uint32 transfer_timeout_seconds = 8 [(buf.validate.field).uint32 = {
+    gte: 60
+    lte: 86400
+  }];
+  string staging_path = 9 [(buf.validate.field).string.prefix = "/"];
+  string remote_path = 10 [(buf.validate.field).string.pattern = "^/my-files/[^/]+$"];
+  repeated Destination destinations = 11 [(buf.validate.field).repeated.min_items = 1];
+}
+message GetConfigurationRequest {}
+message GetConfigurationResponse {
+  Configuration configuration = 1;
+  string revision = 2;
+}
+message SaveConfigurationRequest {
+  Configuration configuration = 1 [(buf.validate.field).required = true];
+  string revision = 2 [(buf.validate.field).string.min_len = 1];
+}
+message SaveConfigurationResponse {
+  string revision = 1;
+}
+
+message BackupSet {
+  string id = 1;
+  string name = 2 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}$"];
+  bool enabled = 3;
+  repeated string paths = 4 [(buf.validate.field).repeated.min_items = 1];
+  repeated string exclusions = 5;
+  bool stop_all_containers = 6;
+  uint32 local_keep = 7 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 10000
+  }];
+  uint32 remote_keep = 8 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 10000
+  }];
+  repeated string container_ids = 9 [(buf.validate.field).repeated.items.string.pattern = "^[a-f0-9]{64}$"];
+  repeated string compose_projects = 10 [(buf.validate.field).repeated.items.string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
+  repeated ComposeApplication compose_applications = 11;
+}
+message ComposeApplication {
+  string project = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
+  repeated string definitions = 2 [(buf.validate.field).repeated.min_items = 1];
+  repeated string env_files = 3;
+  repeated string secret_files = 4;
+}
+message ListSetsRequest {}
+message ListSetsResponse {
+  repeated BackupSet sets = 1;
+  string revision = 2;
+}
+message SaveSetRequest {
+  BackupSet set = 1 [(buf.validate.field).required = true];
+  string revision = 2 [(buf.validate.field).string.min_len = 1];
+}
+message SaveSetResponse {
+  BackupSet set = 1;
+}
+message DeleteSetRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string revision = 2 [(buf.validate.field).string.min_len = 1];
+}
+message DeleteSetResponse {}
+
+enum Operation {
+  OPERATION_UNSPECIFIED = 0;
+  OPERATION_BACKUP = 1;
+  OPERATION_CANCEL_BACKUP = 2;
+  OPERATION_RECOVER_CONTAINERS = 3;
+  OPERATION_START_AUTHENTICATION = 4;
+  OPERATION_CANCEL_AUTHENTICATION = 5;
+  OPERATION_SIGN_OUT = 6;
+  OPERATION_APPLY_CONFIGURATION = 7;
+  OPERATION_INSPECT_ARCHIVE = 8;
+  OPERATION_EXTRACT_FILES = 9;
+}
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_QUEUED = 1;
+  JOB_STATE_RUNNING = 2;
+  JOB_STATE_SUCCEEDED = 3;
+  JOB_STATE_FAILED = 4;
+  JOB_STATE_INTERRUPTED = 5;
+  JOB_STATE_CANCELLED = 6;
+}
+message Job {
+  string id = 1;
+  Operation operation = 2;
+  JobState state = 3;
+  string message = 4;
+  uint64 sequence = 5;
+  string failure_code = 6;
+}
+message StartOperationRequest {
+  Operation operation = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  string request_id = 2 [(buf.validate.field).string.uuid = true];
+  oneof parameters {
+    ArchiveReference inspect_archive = 3;
+    FileExtraction extract_files = 4;
+  }
+  string destination_id = 5;
+}
+message StartOperationResponse {
+  Job job = 1;
+}
+message GetJobRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+message GetJobResponse {
+  Job job = 1;
+}
+message WatchJobRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  uint64 after_sequence = 2;
+}
+message WatchJobResponse {
+  Job job = 1;
+}
+
+message BrowseDirectoriesRequest {
+  string shared_folder_id = 1 [(buf.validate.field).string.uuid = true];
+  string relative_path = 2;
+}
+message Directory {
+  string name = 1;
+  string relative_path = 2;
+}
+message BrowseDirectoriesResponse {
+  repeated Directory directories = 1;
+}
+
+message ListContainersRequest {}
+message Container {
+  string id = 1;
+  string name = 2;
+  string compose_project = 3;
+  bool running = 4;
+}
+message ListContainersResponse {
+  repeated Container containers = 1;
+}
+
+message BrowseBackupsRequest {
+  optional string instance_id = 1 [(buf.validate.field).string.uuid = true];
+  optional string set_id = 2 [(buf.validate.field).string.uuid = true];
+  string destination_id = 3;
+}
+message BackupEntry {
+  string name = 1;
+  bool directory = 2;
+  bool complete_pair = 3;
+  optional uint64 size = 4;
+}
+message BrowseBackupsResponse {
+  repeated BackupEntry entries = 1;
+  bool foreign_instance = 2;
+}
+
+message ArchiveReference {
+  string instance_id = 1 [(buf.validate.field).string.uuid = true];
+  string set_id = 2 [(buf.validate.field).string.uuid = true];
+  string name = 3 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}-[0-9]{8}T[0-9]{4}Z\\.tar\\.zst$"];
+  string destination_id = 4;
+}
+message FileExtraction {
+  string inspection_id = 1 [(buf.validate.field).string.uuid = true];
+  repeated string paths = 2 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 1000
+    unique: true
+    items: {
+      string: {
+        min_len: 1
+        max_len: 4096
+      }
+    }
+  }];
+  string destination = 3 [(buf.validate.field).string = {
+    prefix: "/"
+    max_len: 4096
+  }];
+}
+message GetArchiveRequest {
+  string inspection_id = 1 [(buf.validate.field).string.uuid = true];
+  uint32 offset = 2;
+}
+message ArchiveMember {
+  string path = 1;
+  string kind = 2;
+  uint64 size = 3;
+  string link_target = 4;
+  string issue = 5;
+}
+message GetArchiveResponse {
+  repeated ArchiveMember members = 1;
+  uint32 total = 2;
+  uint32 next_offset = 3;
+  repeated ComposeProjectSnapshot compose = 4;
+}
+message ComposeProjectSnapshot {
+  string project = 1;
+  repeated string definitions = 2;
+  repeated string env_files = 3;
+  repeated string secret_files = 4;
+  repeated ComposeServiceSnapshot services = 5;
+}
+message ComposeServiceSnapshot {
+  string service = 1;
+  string image = 2;
+  string pinned = 3;
+  uint32 replicas = 4;
+  repeated ComposeBindSnapshot binds = 5;
+}
+message ComposeBindSnapshot {
+  string source = 1;
+  string target = 2;
+  bool read_only = 3;
+}
+
+message CancelJobRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+message CancelJobResponse {
+  Job job = 1;
+}
+message PreviewExtractionRequest {
+  FileExtraction extraction = 1 [(buf.validate.field).required = true];
+}
+message PreviewExtractionResponse {
+  uint32 entries = 1;
+  uint64 required_bytes = 2;
+  repeated string included_dependencies = 3;
+  string destination = 4;
+}
+message ReleaseArchiveRequest {
+  string inspection_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message ReleaseArchiveResponse {}
+message ListArchivesRequest {}
+message CachedArchive {
+  string inspection_id = 1;
+  ArchiveReference source = 2;
+  bool ready = 3;
+}
+message ListArchivesResponse {
+  repeated CachedArchive archives = 1;
+}
+
+// Private broker transport uses the same generated messages as the public API.
+message BrokerRequest {
+  string actor = 1;
+  oneof request {
+    GetStatusRequest status = 2;
+    GetConfigurationRequest configuration = 3;
+    SaveConfigurationRequest save_configuration = 4;
+    ListSetsRequest sets = 5;
+    SaveSetRequest save_set = 6;
+    DeleteSetRequest delete_set = 7;
+    StartOperationRequest start_operation = 8;
+    GetJobRequest job = 9;
+    WatchJobRequest events = 10;
+    BrowseDirectoriesRequest directories = 11;
+    ListContainersRequest containers = 12;
+    BrowseBackupsRequest backups = 13;
+    GetArchiveRequest archive = 14;
+    CancelJobRequest cancel_job = 15;
+    PreviewExtractionRequest preview_extraction = 16;
+    ReleaseArchiveRequest release_archive = 17;
+    ListArchivesRequest list_archives = 18;
+  }
+}
+message BrokerResponse {
+  oneof response {
+    GetStatusResponse status = 1;
+    GetConfigurationResponse configuration = 2;
+    SaveConfigurationResponse save_configuration = 3;
+    ListSetsResponse sets = 4;
+    SaveSetResponse save_set = 5;
+    DeleteSetResponse delete_set = 6;
+    StartOperationResponse start_operation = 7;
+    GetJobResponse job = 8;
+    BrowseDirectoriesResponse directories = 9;
+    JobEvents events = 10;
+    BrokerError error = 11;
+    ListContainersResponse containers = 12;
+    BrowseBackupsResponse backups = 13;
+    GetArchiveResponse archive = 14;
+    CancelJobResponse cancel_job = 15;
+    PreviewExtractionResponse preview_extraction = 16;
+    ReleaseArchiveResponse release_archive = 17;
+    ListArchivesResponse list_archives = 18;
+  }
+}
+message JobEvents {
+  repeated Job jobs = 1;
+}
+message BrokerError {
+  string code = 1;
+  string message = 2;
+}
+message FailureDetail {
+  string code = 1;
+}

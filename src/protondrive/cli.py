@@ -1,0 +1,189 @@
+"""Fixed root/admin entry points used by OMV RPC and systemd."""
+
+import argparse
+import json
+import os
+import signal
+import subprocess
+import sys
+from typing import cast
+
+from .common import STATE, BackupError, locked, request
+from .config import load, validate
+from .health import CHECKS, Check, check_health
+from .json_data import JSONValue, decode, object_value
+from .models import ServiceStatus
+from .monitoring import set_monitoring
+from .records import service_status
+from .recovery import Recovery
+
+UNIT = 'omv-protondrive-backup.service'
+
+
+def unavailable_status(message: str) -> ServiceStatus:
+    return service_status({'state': 'unavailable', 'url': '', 'error': message})
+
+
+def active() -> bool:
+    state = subprocess.run(
+        ['systemctl', 'show', UNIT, '--property=ActiveState', '--value'], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    return state in ('active', 'activating', 'deactivating', 'reloading')
+
+
+def idle() -> None:
+    if active():
+        raise BackupError('A backup is running; wait for completion or cancel it first')
+
+
+def follow_run() -> None:
+    with locked(STATE / 'admission.lock'):
+        idle()
+        # systemctl start waits for the oneshot. The job itself survives loss of
+        # this observer (including OMV background-task termination).
+        follower = subprocess.Popen(
+            ['journalctl', '--quiet', '--no-pager', '--follow', '--lines=0', '--output=cat', '--unit=' + UNIT]
+        )
+        try:
+            result = subprocess.run(['systemctl', 'start', UNIT], check=False)
+            if result.returncode:
+                raise BackupError('Backup failed; see the Proton Drive log')
+        finally:
+            follower.terminate()
+            follower.wait()
+        if (STATE / 'status.json').exists():
+            print((STATE / 'status.json').read_text(), flush=True)
+
+
+def recover() -> None:
+    with locked(STATE / 'run.lock'):
+        Recovery().restore()
+
+
+class Arguments(argparse.Namespace):
+    command: str = ''
+    check: Check | None = None
+    destination_id: str = ''
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'command',
+        choices=[
+            'daemon',
+            'run',
+            'run-now',
+            'recover',
+            'repair-cli-lock',
+            'status',
+            'auth-status',
+            'start-auth',
+            'cancel-auth',
+            'logout',
+            'cancel-run',
+            'check-idle',
+            'validate',
+            'validate-stdin',
+            'health',
+            'monitor',
+            'unmonitor',
+        ],
+    )
+    parser.add_argument('check', nargs='?', choices=CHECKS)
+    parser.add_argument('--destination-id', default='')
+    args = parser.parse_args(namespace=Arguments())
+    if (args.command == 'health') != (args.check is not None):
+        parser.error('health requires a check; other commands do not accept one')
+    if args.command != 'daemon' and os.geteuid() != 0 and args.command not in ('validate', 'validate-stdin'):
+        raise BackupError('This operation requires root')
+    if args.command == 'health' and args.check is not None:
+        sys.exit(check_health(args.check))
+    elif args.command == 'daemon':
+        from .daemon import serve
+
+        serve()
+    elif args.command == 'run':
+        from .runner import run
+
+        run()
+    elif args.command == 'run-now':
+        follow_run()
+    elif args.command == 'recover':
+        recover()
+    elif args.command in ('monitor', 'unmonitor'):
+        set_monitoring(args.command == 'monitor')
+    elif args.command == 'check-idle':
+        idle()
+    elif args.command == 'validate':
+        load()
+    elif args.command == 'validate-stdin':
+        validate(decode(sys.stdin.read()))
+    elif args.command == 'cancel-run':
+        subprocess.run(['systemctl', 'stop', UNIT], check=True)
+        recover()
+        print('true')
+    elif args.command in ('status', 'auth-status'):
+        try:
+            auth: ServiceStatus = (
+                request('status', destinationid=args.destination_id) if args.destination_id else request('status')
+            )
+        except BackupError as exc:
+            auth = unavailable_status(str(exc))
+        except (OSError, ValueError, TypeError):
+            auth = unavailable_status('Apply the plugin configuration to start the Proton service')
+        value: dict[str, JSONValue] = {
+            'authstate': auth['state'],
+            'authurl': auth['url'],
+            'autherror': auth['error'],
+            'accountemail': auth['email'],
+            'accountorganization': auth['organization'],
+        }
+        if args.command == 'status':
+            try:
+                value['backends'] = cast(JSONValue, request('backend-statuses'))
+            except (BackupError, OSError, ValueError, TypeError):
+                value['backends'] = []
+            value.update(phase='idle', lastsuccess='', error='', errorcode='', started='', sets={})
+            if (STATE / 'status.json').exists():
+                value.update(object_value(decode((STATE / 'status.json').read_text())))
+            value['running'] = active()
+            recovery = STATE / 'recovery.json'
+            value['recoverypending'] = not value['running'] and (recovery.exists() or recovery.is_symlink())
+            if value['recoverypending']:
+                value['phase'] = 'recovery-required'
+            elif not value['running'] and value['phase'] in (
+                'preflight',
+                'capturing-compose',
+                'pulling-compose-images',
+                'stopping-containers',
+                'archiving',
+                'recovering-containers',
+                'verifying',
+                'uploading',
+                'retention',
+                'recovery-failed',
+            ):
+                value['phase'] = 'interrupted'
+            value.update(
+                transferphase=auth['transferphase'] if value['running'] else '',
+                transferfile=auth['transferfile'] if value['running'] else '',
+                transferelapsed=auth['transferelapsed'] if value['running'] else 0,
+            )
+            value['details'] = json.dumps(value.get('sets', {}), indent=2)
+        print(json.dumps(value))
+    else:
+        idle()
+        result = (
+            request(args.command, destinationid=args.destination_id) if args.destination_id else request(args.command)
+        )
+        print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    try:
+        main()
+    except (BackupError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)

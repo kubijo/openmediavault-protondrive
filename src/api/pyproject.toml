@@ -1,0 +1,60 @@
+[project]
+name = "protondrive-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.16",
+    "connectrpc>=0.12",
+    "protobuf>=6",
+    "protobuf-py>=0.3",
+    "protovalidate>=1",
+    "pyqwest>=0.11", # Imported directly by the generated Connect client.
+    "sqlalchemy>=2",
+    "uvicorn>=0.35",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright",
+    "grpcio-tools",
+    "protoc-gen-connectrpc",
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "mypy-protobuf>=5.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["protondrive_api", "buf"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.basedpyright]
+include = ["protondrive_api", "tests"]
+exclude = ["protondrive_api/v1"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "strict"
+reportAny = "error"
+reportExplicitAny = "error"
+pythonVersion = "3.11"
+pythonPlatform = "Linux"
+extraPaths = ["..", "../../tests/unit"]
+
+[tool.deptry]
+experimental_namespace_package = true # Includes the generated buf.validate namespace.
+extend_exclude = ["(^|.*/)tests(/|$)"]
+known_first_party = ["protondrive"] # Installed alongside the API by the Debian package.
+
+[tool.deptry.package_module_name_map]
+protobuf = "google"
+protobuf-py = "protobuf"
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["uvicorn"] # Started through python -m uvicorn by the systemd unit.

@@ -1,0 +1,3 @@
+{% set runtime = dict(config) %}
+{% set _ = runtime.update({'sets': sets}) %}
+{{ runtime | json }}

@@ -1,0 +1,16 @@
+.header {
+    height: 100%;
+    padding-inline: var(--mantine-spacing-lg);
+}
+
+.content {
+    display: grid;
+    gap: var(--mantine-spacing-xl);
+    grid-template-columns: 12rem minmax(0, 1fr);
+    margin-inline: auto;
+    max-width: 80rem;
+
+    @media (width <= 48rem) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
