@@ -1,0 +1,11 @@
+[Unit]
+Description=Scheduled OMV Proton Drive backup
+
+[Timer]
+OnCalendar=*-*-* {{ '%02d' | format(config.schedulehour | int) }}:{{ '%02d' | format(config.scheduleminute | int) }}:00
+Persistent=false
+AccuracySec=1min
+Unit=omv-protondrive-backup.service
+
+[Install]
+WantedBy=timers.target

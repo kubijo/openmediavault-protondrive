@@ -1,0 +1,8 @@
+#!/usr/bin/python3
+"""OMV Proton Drive administrator entry point."""
+
+import runpy
+import sys
+
+sys.path.insert(0, '/usr/share/openmediavault-protondrive')
+runpy.run_module('protondrive.cli', run_name='__main__')

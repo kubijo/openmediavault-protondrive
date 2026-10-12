@@ -1,0 +1,19 @@
+[Unit]
+Description=OMV Proton Drive backup
+Requires=omv-protondrive.service
+After=omv-protondrive.service omv-protondrive-recover.service
+RequiresMountsFor={{ config.stagingpath | json }}
+
+[Service]
+Type=oneshot
+User=root
+ExecStartPre=/usr/sbin/omv-protondrive recover
+ExecStart=/usr/sbin/omv-protondrive run
+ExecStopPost=/usr/sbin/omv-protondrive recover
+TimeoutStartSec=infinity
+TimeoutStopSec=infinity
+KillMode=mixed
+UMask=0077
+SyslogIdentifier=omv-protondrive
+StandardOutput=journal
+StandardError=journal

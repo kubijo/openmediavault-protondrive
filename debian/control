@@ -1,0 +1,34 @@
+Source: openmediavault-cloud-backup
+Section: admin
+Priority: optional
+Maintainer: OMV Cloud Backup contributors <kubijo@users.noreply.github.com>
+Build-Depends:
+ dpkg-dev,
+ nix-bin,
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: openmediavault-cloud-backup
+Architecture: amd64
+XB-Plugin-Section: backup
+XB-Plugin-Architecture: amd64
+Depends:
+ ca-certificates,
+ dbus,
+ gnome-keyring,
+ libc6 (>= 2.41),
+ libgcc-s1,
+ libsecret-1-0,
+ libstdc++6,
+ openmediavault (<< 9),
+ openmediavault (>= 8),
+ passwd,
+ python3 (<< 3.14),
+ python3 (>= 3.13),
+ rsync,
+ tar (>= 1.31),
+ zstd,
+Description: OpenMediaVault backups to cloud storage
+ Archive selected NAS paths with ownership, ACLs and extended attributes,
+ and copy timestamped backups to enabled cloud destinations. Proton Drive is
+ the first supported provider.

@@ -1,0 +1,7 @@
+version: '1.0'
+type: navigation-item
+data:
+  path: services.protondrive
+  text: _("Proton Drive")
+  icon: mdi:cloud-upload
+  url: /services/protondrive

@@ -1,0 +1,29 @@
+{
+  "name": "omv-protondrive-web-probe",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.10.0"
+    }
+  },
+  "scripts": {
+    "probe": "node src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts",
+    "test:browser": "node --test tests/browser/*.test.ts"
+  },
+  "devDependencies": {
+    "@commander-js/extra-typings": "15.0.0",
+    "@types/node": "^26",
+    "@xterm/headless": "6.0.0",
+    "cli-table3": "0.6.5",
+    "commander": "15.0.0",
+    "log-update": "8.0.0",
+    "playwright-core": "1.63.0",
+    "typescript": "7.0.2",
+    "zx": "8.8.5"
+  }
+}

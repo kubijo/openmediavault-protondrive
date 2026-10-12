@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+case "$1" in
+    remove | purge)
+        rm -f /etc/monit/conf.d/openmediavault-protondrive.conf
+        systemctl reload monit 2>/dev/null || true
+        for unit in omv-protondrive.service omv-protondrive-backup.service omv-protondrive-backup.timer omv-protondrive-recover.service omv-protondrive-api.service omv-protondrive-controller.service; do
+            systemctl disable "$unit" 2>/dev/null || true
+            rm -f "/etc/systemd/system/$unit"
+        done
+        systemctl daemon-reload 2>/dev/null || true
+        # Refresh the web server after removal of the plugin stylesheet include.
+        # shellcheck disable=SC1091
+        . /usr/share/openmediavault/scripts/helper-functions
+        omv_module_set_dirty nginx
+        omv_module_set_dirty monit
+        dpkg-trigger update-workbench
+        ;;
+esac
+
+if [ "$1" = purge ]; then
+    # shellcheck disable=SC1091
+    . /usr/share/openmediavault/scripts/helper-functions
+    omv_config_delete /config/services/protondrive
+    rm -f /etc/openmediavault/protondrive.json
+    # Backups and recovery evidence are deliberately retained, including on purge.
+    rm -rf /var/lib/openmediavault-protondrive/proton
+fi

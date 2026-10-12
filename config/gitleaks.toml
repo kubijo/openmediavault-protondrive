@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated environments, caches, and build outputs"
+paths = [
+    '''(^|/)\.tmp/''',
+    '''(^|/)\.venv/''',
+    '''(^|/)__pycache__/''',
+    '''(^|/)result(-[^/]+)?(/|$)''',
+]

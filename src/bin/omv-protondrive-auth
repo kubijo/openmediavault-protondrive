@@ -1,0 +1,4 @@
+#!/bin/sh
+# Administrator convenience entry point, using the same session as the OMV UI.
+set -eu
+exec /usr/sbin/omv-protondrive start-auth

@@ -1,0 +1,35 @@
+<h3 class="protondrive-status-heading omv-mt-z">Backup</h3>
+{% if authstate == 'loading' %}
+    <p>Loading backup status…</p>
+{% else %}
+    {% if recoverypending | default(false) %}
+        <div role="alert" class="protondrive-recovery-warning">
+            <p><strong>Recovery required</strong></p>
+            <p>A backup was interrupted. Containers may still be stopped. Use Recover containers to restore those that were running before the backup.</p>
+        </div>
+    {% else %}
+        <p><strong>{{ 'Running' if running else 'Not running' }}</strong></p>
+    {% endif %}
+    {% if phase and phase != 'idle' and not recoverypending | default(false) %}
+        <p>Last reported phase: {{ phase | escape }}</p>
+    {% endif %}
+    {% if running and transferphase | default('') %}
+        <p class="protondrive-transfer">
+            <span class="protondrive-transfer-phase">{{ transferphase | escape }}</span>:
+            <span class="protondrive-transfer-file">{{ transferfile | escape }}</span>
+            (<span class="protondrive-transfer-elapsed">{{ transferelapsed | escape }}</span>s elapsed)
+        </p>
+    {% elif running and message | default('') and phase in ['archiving', 'verifying', 'uploading', 'retention'] %}
+        <p>Current item: {{ message | escape }}</p>
+    {% endif %}
+    <p>Last successful backup: {{ (lastsuccess or 'No successful backup yet') | escape }}</p>
+    {% if error %}
+        <p><strong>Last backup error:</strong> {{ error | escape }}</p>
+    {% endif %}
+    {% if details and details != '{}' %}
+        <details>
+            <summary>Last run details</summary>
+            <pre>{{ details | escape }}</pre>
+        </details>
+    {% endif %}
+{% endif %}

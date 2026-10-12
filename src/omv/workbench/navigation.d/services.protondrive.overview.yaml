@@ -1,0 +1,7 @@
+version: '1.0'
+type: navigation-item
+data:
+  path: services.protondrive.overview
+  text: _("Overview")
+  icon: mdi:cloud-upload
+  url: /services/protondrive/overview

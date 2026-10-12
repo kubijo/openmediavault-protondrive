@@ -1,0 +1,6 @@
+version: '1.0'
+type: route
+data:
+  url: /services/protondrive/sets
+  title: _("Backup sets")
+  component: omv-services-protondrive-sets-datatable-page

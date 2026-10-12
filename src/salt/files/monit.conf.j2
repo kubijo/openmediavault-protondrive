@@ -1,0 +1,10 @@
+{% for check in ['backup', 'recovery', 'auth', 'service'] %}
+{% set notification = notifications | selectattr('id', 'equalto', 'protondrive' ~ check) | first | default({'enable': false}) %}
+check program protondrive-{{ check }} with path "/usr/sbin/omv-protondrive health {{ check }}"
+    with timeout 20 seconds
+    group protondrive
+    if status != 0{% if check in ['auth', 'service'] %} for 2 cycles{% endif %} then alert
+{% if email_config.enable | to_bool and not notification.enable | to_bool %}
+    noalert {{ email_config.primaryemail }}
+{% endif %}
+{% endfor %}

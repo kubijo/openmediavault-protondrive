@@ -1,0 +1,15 @@
+[Unit]
+Description=Recover containers after an interrupted Proton Drive backup
+After=docker.service
+Wants=docker.service
+Before=omv-protondrive-backup.service
+ConditionPathExists=/var/lib/openmediavault-protondrive/recovery.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/omv-protondrive recover
+TimeoutStartSec=600
+SyslogIdentifier=omv-protondrive
+
+[Install]
+WantedBy=multi-user.target

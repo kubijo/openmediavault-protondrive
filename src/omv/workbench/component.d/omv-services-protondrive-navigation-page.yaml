@@ -1,0 +1,6 @@
+version: '1.0'
+type: component
+data:
+  name: omv-services-protondrive-navigation-page
+  type: navigationPage
+  config: {}

@@ -1,0 +1,19 @@
+version: v2
+plugins:
+  - protoc_builtin: python
+    protoc_path: [python, -m, grpc_tools.protoc]
+    out: src/api
+    include_imports: true
+  - local: protoc-gen-mypy
+    out: src/api
+    include_imports: true
+  - local: protoc-gen-connectrpc
+    out: src/api
+    opt: protobuf=google
+  - local: protoc-gen-es
+    out: src/web/app/src/generated
+    opt:
+      - target=ts
+      - erasable_syntax=true
+      - import_extension=ts
+      - map_imports=buf/validate/validate.proto:@bufbuild/protovalidate/gen
