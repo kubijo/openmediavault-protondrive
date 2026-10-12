@@ -125,7 +125,9 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(value['errorcode'], '')
             self.assertEqual(value['lastsuccess'], 'previous')
 
-    def exercise(self, fail: bool = False, unexpected: bool = False, compose: bool = False) -> None:
+    def exercise(
+        self, fail: bool = False, unexpected: bool = False, compose: bool = False, failed_verification: bool = False
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary, contextlib.ExitStack() as stack:
             root = Path(temporary)
             config, _ = configuration()
@@ -133,6 +135,18 @@ class RunnerTests(unittest.TestCase):
             events: list[str] = []
             recovery = Mock(restore=lambda: events.append('restore'))
             source = root / 'copies' / 'database'
+            if failed_verification:
+                source.parent.mkdir(parents=True)
+                (source.parent / 'dump.sql.gz').write_bytes(b'database dump')
+                config['sets'][0]['paths'] = str(source.parent)
+                config['sets'][0]['requiredbackups'] = [
+                    {
+                        'name': 'database',
+                        'directory': str(source.parent),
+                        'pattern': '*.sql.gz',
+                        'max_age_hours': 36,
+                    }
+                ]
             if compose:
                 job_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
                 config['sets'][0]['composesources'] = [{'job_id': job_id, 'stacks': ['database']}]
@@ -185,14 +199,18 @@ class RunnerTests(unittest.TestCase):
                 ('request', Mock(return_value=[])),
                 ('upload', Mock(side_effect=upload)),
             ]
+            if failed_verification:
+                replacements.append(
+                    ('verify_archived_backup', Mock(side_effect=BackupError('archived backup mismatch')))
+                )
             for name, value in replacements:
                 stack.enter_context(patch.object(runner, name, value))
             stack.enter_context(patch('signal.signal'))
             stack.enter_context(patch('grp.getgrnam', return_value=SimpleNamespace(gr_gid=0)))
             stack.enter_context(patch('os.chown'))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
-            if fail:
-                with self.assertRaisesRegex(RuntimeError if unexpected else BackupError, 'private|injected'):
+            if fail or failed_verification:
+                with self.assertRaisesRegex(RuntimeError if unexpected else BackupError, 'private|injected|mismatch'):
                     runner.run()
                 status = object_value(decode((root / 'status.json').read_text()))
                 if unexpected:
@@ -223,6 +241,9 @@ class RunnerTests(unittest.TestCase):
 
     def test_archive_failure_never_uploads(self):
         self.exercise(fail=True)
+
+    def test_required_backup_mismatch_never_uploads(self):
+        self.exercise(failed_verification=True)
 
     def test_unexpected_archive_failure_has_a_redacted_reference(self):
         self.exercise(fail=True, unexpected=True)

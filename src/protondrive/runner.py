@@ -23,6 +23,9 @@ from .json_data import JSONValue, decode, object_value, validate
 from .models import BackupSet, Configuration, Destination, Manifest
 from .operation import Cancelled
 from .recovery import Recovery
+from .required_backup import SelectedBackup
+from .required_backup import select as select_required_backup
+from .required_backup import verify_archived as verify_archived_backup
 
 logger = logging.getLogger(__name__)
 active_destination_id: str | None = None
@@ -253,9 +256,17 @@ def run() -> None:
             check_space(staging, required, config['minimumfreebytes'])
             for item in items:
                 partial = staging / item['uuid'] / f'{item["name"]}-{timestamp}.tar.zst.partial'
+                selected_backups: list[SelectedBackup] = []
+                for requirement in item['requiredbackups']:
+                    status('checking-backups', message=requirement['name'])
+                    selected = select_required_backup(requirement)
+                    selected_backups.append(selected)
+                    records_by_set[item['uuid']].append(selected.record())
                 status('archiving', message=item['name'], sources=validate(records_by_set[item['uuid']]))
                 partials.append((item, partial))
                 archive(item, partial, config['minimumfreebytes'], extra_by_set[item['uuid']])
+                for selected in selected_backups:
+                    verify_archived_backup(partial, selected)
             results: dict[str, JSONValue] = {}
             for item, partial in partials:
                 status('verifying', message=item['name'])

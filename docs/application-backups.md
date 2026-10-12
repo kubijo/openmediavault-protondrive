@@ -19,6 +19,9 @@ much older than the media capture, so inspect its date before trusting the pair.
 dump and the files it references. See
 [Immich's backup and restore guide](https://docs.immich.app/administration/backup-and-restore/).
 
+In the backup set, add a required application backup with the host path to `UPLOAD_LOCATION/backups`, filename pattern
+`*.sql.gz`, and an age limit slightly longer than Immich's dump interval (for a daily dump, for example 36 hours).
+
 ## Audiobookshelf
 
 Enable Audiobookshelf backups on its **Backups** settings page. By default, it writes them to `/metadata/backups`; the
@@ -33,8 +36,13 @@ that restoring between installation methods can lose progress or metadata. See
 [Audiobookshelf's backup guide](https://audiobookshelf.org/docs/documentation/server-management/backups/) and
 [Docker mount guide](https://audiobookshelf.org/docs/documentation/install/docker/).
 
+In the backup set, add a required application backup with the host path to `/metadata/backups` (or your configured
+backup location), filename pattern `*.audiobookshelf`, and an age limit slightly longer than its backup interval.
+
 ## Current verification limit
 
-The plugin does not yet require a fresh application backup file or prove that it matches the copied media. The status
-therefore reports capture consistency as unverified. If using an OMV Compose backup job, also inspect that job's log:
-its copy failures are not always reflected in the job's exit status.
+When a required application backup is configured, the plugin rejects missing or stale files and checks that the selected
+file's bytes are present in the archive before upload. The manifest records its path, modification time, size, and
+checksum. This proves the selected database backup file was copied intact. It does not prove that it is restorable or
+that it matches the copied media; capture consistency therefore remains unverified. If using an OMV Compose backup job,
+also inspect that job's log: its copy failures are not always reflected in the job's exit status.

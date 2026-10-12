@@ -1,5 +1,8 @@
 """Exercise the installed runner/daemon with real archives and a fake remote backend."""
 
+import gzip
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -7,9 +10,9 @@ import time
 from pathlib import Path
 
 if __package__:
-    from .guest_support import ProtonDriveRpc, decode, integer, run
+    from .guest_support import ProtonDriveRpc, decode, integer, items, mapping, run
 else:
-    from guest_support import ProtonDriveRpc, decode, integer, run
+    from guest_support import ProtonDriveRpc, decode, integer, items, mapping, run
 
 STATE = Path('/var/lib/openmediavault-protondrive')
 REMOTE = STATE / 'proton/fake-remote/my-files'
@@ -27,11 +30,29 @@ def configure() -> None:
     os.setxattr(data / 'database/content', 'user.backup-test', b'preserved')
     (data / 'cache').mkdir()
     (data / 'cache/ignored').touch()
+    (data / 'backups').mkdir()
+    dump = data / 'backups/database.sql.gz'
+    dump.write_bytes(gzip.compress(b'database fixture\n'))
     rpc = ProtonDriveRpc()
     for item in rpc.list_sets():
         item['enable'] = item['name'] == 'appData'
         if item['enable']:
-            item.update(paths=str(data), excludes='cache', localkeep=1, remotekeep=1)
+            item.update(
+                paths=str(data),
+                excludes='cache',
+                localkeep=1,
+                remotekeep=1,
+                requiredbackups=json.dumps(
+                    [
+                        {
+                            'name': 'database',
+                            'directory': str(data / 'backups'),
+                            'pattern': '*.sql.gz',
+                            'max_age_hours': 36,
+                        }
+                    ]
+                ),
+            )
         rpc.save_set(item)
     run('omv-salt', 'deploy', 'run', 'protondrive')
 
@@ -66,6 +87,15 @@ def main() -> None:
         run_backup()
         archives = list(REMOTE.rglob('*.tar.zst'))
         assert len(archives) == 1
+        manifest = decode(archives[0].with_name(archives[0].name + '.manifest.json').read_text())
+        selected = next(
+            source for entry in items(manifest['sources']) if (source := mapping(entry))['kind'] == 'required-backup'
+        )
+        assert selected['path'] == '/data/fixture/backups/database.sql.gz'
+        assert (
+            selected['sha256']
+            == hashlib.sha256((Path('/data/fixture/backups/database.sql.gz')).read_bytes()).hexdigest()
+        )
         restore = Path('/data/restored')
         restore.mkdir()
         run(
@@ -91,7 +121,7 @@ def main() -> None:
         assert (database / 'content').read_text() == 'backup fixture\n'
         assert os.getxattr(database / 'content', 'user.backup-test') == b'preserved'
         assert not (restore / 'data/fixture/cache').exists()
-        print('PASS: installed runner/daemon backup, remote pair, metadata restore, exclusions', flush=True)
+        print('PASS: installed backup, required database dump, remote pair, metadata restore, exclusions', flush=True)
     finally:
         run('systemctl', 'stop', 'omv-protondrive')
         BINARY.unlink(missing_ok=True)

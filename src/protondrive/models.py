@@ -35,6 +35,13 @@ class ComposeSource(TypedDict):
     stacks: list[str]
 
 
+class RequiredBackup(TypedDict):
+    name: str
+    directory: str
+    pattern: str
+    max_age_hours: int
+
+
 class BackupSet(TypedDict):
     uuid: str
     name: str
@@ -46,6 +53,7 @@ class BackupSet(TypedDict):
     composeprojects: NotRequired[str]
     composeapps: NotRequired[list[ComposeApplication]]
     composesources: list[ComposeSource]
+    requiredbackups: list[RequiredBackup]
     migrationrequired: bool
     localkeep: int
     remotekeep: int

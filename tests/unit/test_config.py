@@ -4,7 +4,7 @@ import unittest
 from helpers import configuration
 from protondrive.common import BackupError, locked
 from protondrive.config import applications, compose_sources, validate
-from protondrive.models import ComposeSource
+from protondrive.models import ComposeSource, RequiredBackup
 
 
 class ConfigTests(unittest.TestCase):
@@ -61,6 +61,38 @@ class ConfigTests(unittest.TestCase):
             validate(config)
         item['composesources'] = [source, ComposeSource(job_id=source['job_id'], stacks=['proxy'])]
         with self.assertRaisesRegex(BackupError, 'job selected more than once'):
+            validate(config)
+
+    def test_required_backup_must_be_selected_and_not_excluded(self):
+        config, item = configuration()
+        requirement = RequiredBackup(
+            name='immich', directory='/data/appData/backups', pattern='*.sql.gz', max_age_hours=36
+        )
+        item['requiredbackups'] = [requirement]
+        self.assertEqual(validate(config)['sets'][0]['requiredbackups'], [requirement])
+        item['excludes'] = 'backups'
+        with self.assertRaisesRegex(BackupError, 'excluded'):
+            validate(config)
+        item['excludes'] = ''
+        item['requiredbackups'] = [
+            RequiredBackup(
+                name=requirement['name'],
+                directory='/other/backups',
+                pattern=requirement['pattern'],
+                max_age_hours=requirement['max_age_hours'],
+            )
+        ]
+        with self.assertRaisesRegex(BackupError, 'not selected'):
+            validate(config)
+        item['requiredbackups'] = [
+            RequiredBackup(
+                name=requirement['name'],
+                directory=requirement['directory'],
+                pattern='../*.sql.gz',
+                max_age_hours=requirement['max_age_hours'],
+            )
+        ]
+        with self.assertRaisesRegex(BackupError, 'filename pattern'):
             validate(config)
 
     def test_remote_destination_is_one_user_chosen_root_folder(self):

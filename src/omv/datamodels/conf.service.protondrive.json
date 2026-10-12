@@ -121,6 +121,10 @@
               "composesources": {
                 "type": "string",
                 "default": ""
+              },
+              "requiredbackups": {
+                "type": "string",
+                "default": ""
               }
             }
           }

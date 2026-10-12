@@ -394,6 +394,7 @@ class BackupSet(_message.Message):
     COMPOSE_APPLICATIONS_FIELD_NUMBER: _builtins.int
     COMPOSE_SOURCES_FIELD_NUMBER: _builtins.int
     MIGRATION_REQUIRED_FIELD_NUMBER: _builtins.int
+    REQUIRED_BACKUPS_FIELD_NUMBER: _builtins.int
     id: _builtins.str
     name: _builtins.str
     enabled: _builtins.bool
@@ -413,6 +414,8 @@ class BackupSet(_message.Message):
     def compose_applications(self) -> _containers.RepeatedCompositeFieldContainer[Global___ComposeApplication]: ...
     @_builtins.property
     def compose_sources(self) -> _containers.RepeatedCompositeFieldContainer[Global___ComposeSource]: ...
+    @_builtins.property
+    def required_backups(self) -> _containers.RepeatedCompositeFieldContainer[Global___RequiredBackup]: ...
     def __init__(
         self,
         *,
@@ -429,14 +432,43 @@ class BackupSet(_message.Message):
         compose_applications: _abc.Iterable[Global___ComposeApplication] | None = ...,
         compose_sources: _abc.Iterable[Global___ComposeSource] | None = ...,
         migration_required: _builtins.bool = ...,
+        required_backups: _abc.Iterable[Global___RequiredBackup] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["compose_applications", b"compose_applications", "compose_projects", b"compose_projects", "compose_sources", b"compose_sources", "container_ids", b"container_ids", "enabled", b"enabled", "exclusions", b"exclusions", "id", b"id", "local_keep", b"local_keep", "migration_required", b"migration_required", "name", b"name", "paths", b"paths", "remote_keep", b"remote_keep", "stop_all_containers", b"stop_all_containers"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["compose_applications", b"compose_applications", "compose_projects", b"compose_projects", "compose_sources", b"compose_sources", "container_ids", b"container_ids", "enabled", b"enabled", "exclusions", b"exclusions", "id", b"id", "local_keep", b"local_keep", "migration_required", b"migration_required", "name", b"name", "paths", b"paths", "remote_keep", b"remote_keep", "required_backups", b"required_backups", "stop_all_containers", b"stop_all_containers"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___BackupSet: _TypeAlias = BackupSet  # noqa: Y015
+
+@_typing.final
+class RequiredBackup(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: _builtins.int
+    DIRECTORY_FIELD_NUMBER: _builtins.int
+    PATTERN_FIELD_NUMBER: _builtins.int
+    MAX_AGE_HOURS_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
+    directory: _builtins.str
+    pattern: _builtins.str
+    max_age_hours: _builtins.int
+    def __init__(
+        self,
+        *,
+        name: _builtins.str = ...,
+        directory: _builtins.str = ...,
+        pattern: _builtins.str = ...,
+        max_age_hours: _builtins.int = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["directory", b"directory", "max_age_hours", b"max_age_hours", "name", b"name", "pattern", b"pattern"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___RequiredBackup: _TypeAlias = RequiredBackup  # noqa: Y015
 
 @_typing.final
 class ComposeSource(_message.Message):

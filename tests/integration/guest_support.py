@@ -106,6 +106,7 @@ class OmvBackupSet(TypedDict):
     containerids: str
     composeprojects: str
     composeapps: str
+    requiredbackups: str
 
 
 class InteractiveFixture(TypedDict):
@@ -149,6 +150,7 @@ def omv_backup_set(value: object) -> OmvBackupSet:
         containerids=string(raw.get('containerids', '')),
         composeprojects=string(raw.get('composeprojects', '')),
         composeapps=string(raw.get('composeapps', '')),
+        requiredbackups=string(raw.get('requiredbackups', '')),
     )
 
 

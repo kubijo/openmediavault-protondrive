@@ -7,7 +7,7 @@ from typing import cast
 
 from .common import CONFIG, BackupError
 from .json_data import JSONValue, decode, object_value, string
-from .models import BackupSet, ComposeApplication, ComposeSource, Configuration, Destination
+from .models import BackupSet, ComposeApplication, ComposeSource, Configuration, Destination, RequiredBackup
 
 
 def boolean(value: object) -> bool:
@@ -138,6 +138,47 @@ def compose_sources(value: object) -> list[ComposeSource]:
     return result
 
 
+def required_backups(value: object) -> list[RequiredBackup]:
+    if value == '' or value is None:
+        return []
+    if isinstance(value, str):
+        if len(value.encode()) > 65536:
+            raise BackupError('Invalid required backups')
+        raw = decode(value.removeprefix('json:'))
+    else:
+        raw = value
+    if not isinstance(raw, list):
+        raise BackupError('Invalid required backups')
+    members = cast('list[JSONValue]', raw)
+    if len(members) > 16:
+        raise BackupError('Invalid required backups')
+    result: list[RequiredBackup] = []
+    for member in members:
+        entry = object_value(member)
+        if set(entry) != {'name', 'directory', 'pattern', 'max_age_hours'}:
+            raise BackupError('Invalid required backup fields')
+        name = string(entry['name'])
+        pattern = string(entry['pattern'])
+        if re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,63}', name) is None:
+            raise BackupError('Invalid required backup name')
+        if len(pattern) > 128 or re.fullmatch(r'[A-Za-z0-9*][A-Za-z0-9._*-]*', pattern) is None:
+            raise BackupError('Invalid required backup filename pattern')
+        directory = local_path(entry['directory'])
+        if directory == Path('/'):
+            raise BackupError('Invalid required backup directory')
+        result.append(
+            RequiredBackup(
+                name=name,
+                directory=str(directory),
+                pattern=pattern,
+                max_age_hours=bounded(entry['max_age_hours'], 'required backup age', 1, 8760),
+            )
+        )
+    if len({entry['name'] for entry in result}) != len(result):
+        raise BackupError('Duplicate required backup name')
+    return result
+
+
 def destinations(value: object, legacy_root: str) -> list[Destination]:
     if value is None or value == '':
         return [Destination(id='protondrive', kind='protondrive', name='Proton Drive', enable=True, root=legacy_root)]
@@ -219,6 +260,7 @@ def validate(value: object) -> Configuration:
             paths=string(data['paths']),
             excludes=string(data['excludes']),
             composesources=compose_sources(data.get('composesources', '')),
+            requiredbackups=required_backups(data.get('requiredbackups', '')),
             migrationrequired=False,
         )
         selected_containers = string(data.get('containerids', ''))
@@ -265,6 +307,16 @@ def validate(value: object) -> Configuration:
                 or any(ord(c) < 32 for c in exclusion)
             ):
                 raise BackupError('Exclusions must be literal source-relative paths')
+        for backup in item['requiredbackups']:
+            directory = Path(backup['directory'])
+            if not any(directory == source or source in directory.parents for source in resolved):
+                raise BackupError(f'Required backup directory is not selected for backup: {directory}')
+            if any(
+                directory == source / exclusion or source / exclusion in directory.parents
+                for source in resolved
+                for exclusion in lines(item['excludes'])
+            ):
+                raise BackupError(f'Required backup directory is excluded from the archive: {directory}')
         for app in compose_apps:
             for selected_file in app['definitions'] + app['envfiles'] + app['secretfiles']:
                 path = Path(selected_file)

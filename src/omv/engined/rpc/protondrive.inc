@@ -91,6 +91,7 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
     {
         $value['composeapps'] = $this->exposedJson($value['composeapps'] ?? '');
         $value['composesources'] = $this->exposedJson($value['composesources'] ?? '');
+        $value['requiredbackups'] = $this->exposedJson($value['requiredbackups'] ?? '');
         return $value;
     }
 
@@ -182,7 +183,7 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
         $this->command('check-idle');
         $object = new \OMV\Config\ConfigObject('conf.service.protondrive.set');
         $stored = $params;
-        foreach (['composeapps', 'composesources'] as $property) {
+        foreach (['composeapps', 'composesources', 'requiredbackups'] as $property) {
             if (array_key_exists($property, $stored)) {
                 $stored[$property] = $this->storedJson($stored[$property]);
             }
@@ -195,12 +196,18 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
                 if ($item['name'] !== $candidate['name']) {
                     throw new \RuntimeException('Backup set names cannot be changed');
                 }
-                foreach (['containerids', 'composeprojects', 'composeapps', 'composesources'] as $property) {
+                foreach ([
+                    'containerids',
+                    'composeprojects',
+                    'composeapps',
+                    'composesources',
+                    'requiredbackups',
+                ] as $property) {
                     if (!array_key_exists($property, $params)) {
                         $value = $item[$property] ?? '';
                         $object->set(
                             $property,
-                            in_array($property, ['composeapps', 'composesources'], true)
+                            in_array($property, ['composeapps', 'composesources', 'requiredbackups'], true)
                                 ? $this->storedJson($value)
                                 : $value,
                         );

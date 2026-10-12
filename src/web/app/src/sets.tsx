@@ -22,8 +22,13 @@ import { useState } from 'react';
 
 import { queryClient } from './api.ts';
 import { Failure, Loading } from './components.tsx';
-import type { BackupSet, ComposeSource } from './generated/protondrive_api/v1/control_pb.ts';
-import { BackupSetSchema, ComposeSourceSchema, ControlService } from './generated/protondrive_api/v1/control_pb.ts';
+import type { BackupSet, ComposeSource, RequiredBackup } from './generated/protondrive_api/v1/control_pb.ts';
+import {
+    BackupSetSchema,
+    ComposeSourceSchema,
+    ControlService,
+    RequiredBackupSchema,
+} from './generated/protondrive_api/v1/control_pb.ts';
 
 export function BackupSets(): ReactElement {
     const query = useQuery(ControlService.method.listSets);
@@ -61,6 +66,9 @@ export function BackupSets(): ReactElement {
                         )}
                         <Text children={item.paths.length ? item.paths.join(', ') : 'No ordinary file paths'} />
                         <Text children={`${item.composeSources.length} OMV Compose source(s)`} />
+                        {item.requiredBackups.length > 0 && (
+                            <Text children={`${item.requiredBackups.length} required recent backup file(s)`} />
+                        )}
                         {item.composeSources.length > 0 && (
                             <Text
                                 c="yellow"
@@ -122,6 +130,7 @@ function SetEditor(props: SetEditorProps): ReactElement {
     const save = useMutation(ControlService.method.saveSet);
     const inventory = useQuery(ControlService.method.listComposeSources);
     const [composeSources, setComposeSources] = useState<ComposeSource[]>(value.composeSources);
+    const [requiredBackups, setRequiredBackups] = useState<RequiredBackup[]>(value.requiredBackups);
     const [reviewed, setReviewed] = useState(false);
     const form = useForm({
         defaultValues: { ...value, paths: value.paths.join('\n'), exclusions: value.exclusions.join('\n') },
@@ -140,6 +149,7 @@ function SetEditor(props: SetEditorProps): ReactElement {
                             .map(path => path.trim())
                             .filter(Boolean),
                         composeSources,
+                        requiredBackups,
                         stopAllContainers: false,
                         containerIds: [],
                         composeProjects: [],
@@ -208,8 +218,8 @@ function SetEditor(props: SetEditorProps): ReactElement {
                 </form.Field>
                 <Text size="sm">
                     For Immich, include the upload directory (with its database dumps) and any external libraries. For
-                    Audiobookshelf, include its backup directory and every book or podcast library. Check that each app
-                    has made a recent database backup before this job runs.{' '}
+                    Audiobookshelf, include its backup directory and every book or podcast library. Add a required
+                    application backup below to fail the job when its database backup is stale or missing.{' '}
                     <Anchor
                         href="https://docs.immich.app/administration/backup-and-restore/"
                         target="_blank"
@@ -232,6 +242,90 @@ function SetEditor(props: SetEditorProps): ReactElement {
                         />
                     )}
                 </form.Field>
+                <Title order={2} children="Required application backups" />
+                <Text
+                    size="sm"
+                    children="Before archiving, require a recent application-created backup file. The directory must be inside a selected source directory. The archived file is checked against its original hash before upload. This does not prove that live media matches the database backup."
+                />
+                {requiredBackups.map((backup, index) => (
+                    <Paper key={index} withBorder p="md">
+                        <Stack>
+                            <TextInput
+                                label="Backup name"
+                                required
+                                value={backup.name}
+                                onChange={event => {
+                                    const name = event.currentTarget.value;
+                                    setRequiredBackups(current =>
+                                        current.map((entry, i) => (i === index ? { ...entry, name } : entry)),
+                                    );
+                                }}
+                            />
+                            <TextInput
+                                label="Backup directory on this NAS"
+                                required
+                                placeholder="/srv/immich/upload/backups"
+                                value={backup.directory}
+                                onChange={event => {
+                                    const directory = event.currentTarget.value;
+                                    setRequiredBackups(current =>
+                                        current.map((entry, i) => (i === index ? { ...entry, directory } : entry)),
+                                    );
+                                }}
+                            />
+                            <TextInput
+                                label="Filename pattern"
+                                required
+                                description="Use * as a wildcard, for example *.sql.gz or *.audiobookshelf."
+                                value={backup.pattern}
+                                onChange={event => {
+                                    const pattern = event.currentTarget.value;
+                                    setRequiredBackups(current =>
+                                        current.map((entry, i) => (i === index ? { ...entry, pattern } : entry)),
+                                    );
+                                }}
+                            />
+                            <NumberInput
+                                label="Maximum age (hours)"
+                                min={1}
+                                max={8760}
+                                allowDecimal={false}
+                                value={backup.maxAgeHours}
+                                onChange={next => {
+                                    if (typeof next === 'number')
+                                        setRequiredBackups(current =>
+                                            current.map((entry, i) =>
+                                                i === index ? { ...entry, maxAgeHours: next } : entry,
+                                            ),
+                                        );
+                                }}
+                            />
+                            <Button
+                                type="button"
+                                color="red"
+                                variant="outline"
+                                onClick={() => setRequiredBackups(current => current.filter((_, i) => i !== index))}
+                                children="Remove required backup"
+                            />
+                        </Stack>
+                    </Paper>
+                ))}
+                <Button
+                    type="button"
+                    variant="default"
+                    disabled={requiredBackups.length >= 16}
+                    onClick={() =>
+                        setRequiredBackups(current => [
+                            ...current,
+                            create(RequiredBackupSchema, {
+                                name: `backup${current.length + 1}`,
+                                pattern: '*.sql.gz',
+                                maxAgeHours: 36,
+                            }),
+                        ])
+                    }
+                    children="Require another backup"
+                />
                 <Title order={2} children="OMV Compose sources" />
                 <Text
                     size="sm"

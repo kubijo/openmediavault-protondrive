@@ -125,6 +125,16 @@ message BackupSet {
   repeated ComposeApplication compose_applications = 11;
   repeated ComposeSource compose_sources = 12;
   bool migration_required = 13;
+  repeated RequiredBackup required_backups = 14;
+}
+message RequiredBackup {
+  string name = 1 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}$"];
+  string directory = 2 [(buf.validate.field).string.prefix = "/"];
+  string pattern = 3 [(buf.validate.field).string.min_len = 1];
+  uint32 max_age_hours = 4 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 8760
+  }];
 }
 message ComposeSource {
   string job_id = 1 [(buf.validate.field).string.uuid = true];

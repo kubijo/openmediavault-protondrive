@@ -12,7 +12,7 @@ from typing import cast
 from protondrive.common import FAILURE_CODES, BackupError, FailureCode
 from protondrive.compose_source import inventory as compose_inventory
 from protondrive.compose_source import validate_source
-from protondrive.config import applications, compose_sources, destinations
+from protondrive.config import applications, compose_sources, destinations, required_backups
 from protondrive.json_data import JSONValue, boolean, decode, integer, object_value, string
 from protondrive.models import ComposeSource
 
@@ -118,6 +118,15 @@ def backup_set(value: dict[str, JSONValue]) -> wire.BackupSet:
             wire.ComposeSource(job_id=source['job_id'], stacks=source['stacks'])
             for source in compose_sources(value.get('composesources', ''))
         ],
+        required_backups=[
+            wire.RequiredBackup(
+                name=backup['name'],
+                directory=backup['directory'],
+                pattern=backup['pattern'],
+                max_age_hours=backup['max_age_hours'],
+            )
+            for backup in required_backups(value.get('requiredbackups', ''))
+        ],
         migration_required=bool(
             boolean(value['stopcontainers'])
             or string(value.get('containerids', ''))
@@ -202,6 +211,18 @@ class OMV:
                 ),
                 'composesources': json.dumps(
                     [{'job_id': source.job_id, 'stacks': list(source.stacks)} for source in value.compose_sources],
+                    separators=(',', ':'),
+                ),
+                'requiredbackups': json.dumps(
+                    [
+                        {
+                            'name': backup.name,
+                            'directory': backup.directory,
+                            'pattern': backup.pattern,
+                            'max_age_hours': backup.max_age_hours,
+                        }
+                        for backup in value.required_backups
+                    ],
                     separators=(',', ':'),
                 ),
                 'localkeep': value.local_keep,
