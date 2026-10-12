@@ -1,4 +1,4 @@
-"""Lock Debian 12 compatible wheels from the API's uv dependency lock."""
+"""Lock Debian 13 compatible wheels from the API's uv dependency lock."""
 
 import argparse
 import json
@@ -28,9 +28,9 @@ def resolve(project: Path) -> list[dict[str, str]]:
     ).stdout
     environment: dict[str, str] = {key: str(value) for key, value in default_environment().items()}
     environment.update(
-        python_version='3.11',
-        python_full_version='3.11.0',
-        implementation_version='3.11.0',
+        python_version='3.13',
+        python_full_version='3.13.0',
+        implementation_version='3.13.0',
         implementation_name='cpython',
         platform_python_implementation='CPython',
         sys_platform='linux',
@@ -38,10 +38,10 @@ def resolve(project: Path) -> list[dict[str, str]]:
         platform_system='Linux',
         os_name='posix',
     )
-    platforms = [f'manylinux_2_{minor}_x86_64' for minor in range(36, 4, -1)]
+    platforms = [f'manylinux_2_{minor}_x86_64' for minor in range(41, 4, -1)]
     platforms += ['manylinux2014_x86_64', 'manylinux2010_x86_64', 'manylinux1_x86_64']
-    tags = list(cpython_tags((3, 11), abis=['cp311'], platforms=platforms))
-    tags += list(compatible_tags((3, 11), interpreter='cp311', platforms=platforms))
+    tags = list(cpython_tags((3, 13), abis=['cp313'], platforms=platforms))
+    tags += list(compatible_tags((3, 13), interpreter='cp313', platforms=platforms))
     priority = {tag: index for index, tag in enumerate(tags)}
     result: list[dict[str, str]] = []
     for line in requirements.splitlines():
@@ -69,7 +69,7 @@ def resolve(project: Path) -> list[dict[str, str]]:
             if ranks:
                 candidates.append((min(ranks), {'name': filename, 'url': url, 'hash': string(wheel['hash'])}))
         if not candidates:
-            raise ValueError(f'No Debian 12 / CPython 3.11 wheel for {requirement.name}')
+            raise ValueError(f'No Debian 13 / CPython 3.13 wheel for {requirement.name}')
         result.append(min(candidates, key=lambda item: item[0])[1])
     return result
 

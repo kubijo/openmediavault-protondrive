@@ -1,4 +1,4 @@
-"""Debian 12 ABI and service-session checks, exclusively in a disposable container."""
+"""Debian 13 ABI and service-session checks, exclusively in a disposable container."""
 
 import hashlib
 import json
@@ -12,8 +12,10 @@ from pathlib import Path
 
 if __package__:
     from .guest_support import decode, mapping, run
+    from .smoke_packages import TEST
 else:
     from guest_support import decode, mapping, run
+    from smoke_packages import TEST
 
 SOURCE = Path('/src')
 STATE = Path('/var/lib/openmediavault-protondrive')
@@ -22,31 +24,7 @@ SOCKET = Path('/run/omv-protondrive/control.sock')
 
 def install_dependencies():
     run('apt-get', 'update', '-qq')
-    run(
-        'apt-get',
-        'install',
-        '-y',
-        '--no-install-recommends',
-        'python3',
-        'python3-jinja2',
-        'python3-yaml',
-        'tar',
-        'zstd',
-        'acl',
-        'attr',
-        'dbus',
-        'gnome-keyring',
-        'libsecret-1-0',
-        'ca-certificates',
-        'php-cli',
-        'php-mbstring',
-        'php-xml',
-        'php-yaml',
-        'wget',
-        'gnupg',
-        'xmlstarlet',
-        'lintian',
-    )
+    run('apt-get', 'install', '-y', '--no-install-recommends', *TEST)
 
 
 def configure_session():
@@ -69,7 +47,7 @@ def configure_session():
 
 
 @contextmanager
-def private_session() -> Generator[None, None, None]:
+def private_session() -> Generator[None]:
     SOCKET.unlink(missing_ok=True)
     with (
         Path('/tmp/proton-session.log').open('w') as log,
@@ -130,7 +108,7 @@ def main():
     configure_session()
     test_private_session()
     run('lintian', '--allow-root', '/tmp/plugin.deb')
-    print('PASS: Debian 12 CLI ABI, runtime tests, private keyring restart, package policy')
+    print('PASS: Debian 13 CLI ABI, runtime tests, private keyring restart, package policy')
 
 
 if __name__ == '__main__':

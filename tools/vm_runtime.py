@@ -1,5 +1,7 @@
 """Shared QEMU boot/provisioning helpers and the disposable OMV integration runner."""
 
+import ast
+import hashlib
 import os
 import re
 import shlex
@@ -23,6 +25,7 @@ from console import child_environment, print_exception
 from process_output import ProcessOutput
 from process_signals import TerminationRequested, termination_signals
 from vm_cache import BaseCache, fingerprint
+from vm_control import qmp
 
 SOURCE = Path(__file__).resolve().parents[1]
 JOB_UNIT = 'omv-protondrive-harness.service'
@@ -115,14 +118,16 @@ def free_port() -> int:
 def prepare(directory: Path, image: Path) -> Path:
     key = directory / 'key'
     run('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key))
+    public_key = key.with_suffix('.pub').read_text().strip()
     user_data = {
         'hostname': 'protondrive-test',
         'disable_root': False,
         'ssh_pwauth': False,
-        'users': [{'name': 'root', 'ssh_authorized_keys': [key.with_suffix('.pub').read_text().strip()]}],
+        'users': [{'name': 'root', 'ssh_authorized_keys': [public_key]}],
     }
     (directory / 'user-data').write_text('#cloud-config\n' + yaml.safe_dump(user_data))
     (directory / 'meta-data').write_text(yaml.safe_dump({'instance-id': directory.name}))
+    (directory / 'authorized-key').write_text(public_key + '\n')
     run(
         'genisoimage',
         '-quiet',
@@ -134,6 +139,7 @@ def prepare(directory: Path, image: Path) -> Path:
         '-rock',
         str(directory / 'user-data'),
         str(directory / 'meta-data'),
+        str(directory / 'authorized-key'),
     )
     run(
         'qemu-img',
@@ -313,8 +319,14 @@ def connect(
                 raise RuntimeError(f'VM failed to become reachable; inspect {label}serial.log')
             time.sleep(2)
         output.run(
-            [*guest.ssh, 'cloud-init status --wait'],
-            options.reports / f'{label}cloud-init.log',
+            [
+                *guest.ssh,
+                (
+                    'if command -v cloud-init >/dev/null; then cloud-init status --wait; '
+                    'else systemctl is-active --quiet omv-test-seed-identity.service; fi'
+                ),
+            ],
+            options.reports / f'{label}guest-init.log',
             timeout=180,
         )
     if disposable:
@@ -350,11 +362,39 @@ def qemu_command(directory: Path, serial: Path, ports: dict[int, int]) -> list[s
     ]
 
 
+def wait_for_sealed_shutdown(guest: Guest, label: str, output: ProcessOutput) -> None:
+    """Let the guest power itself off, then use its host monitor as a fallback."""
+    process = guest.process
+    if process is None:
+        raise RuntimeError(f'{label} has no QEMU process; cache will not be published')
+    try:
+        code = process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        if process.poll() is None:
+            output.console.print(f'{label}: still running after 15s; requesting host ACPI shutdown')
+            try:
+                qmp(guest.directory / 'control.sock', 'system_powerdown')
+            except (OSError, RuntimeError) as error:
+                if process.poll() is None:
+                    raise RuntimeError(f'{label} host shutdown request failed; cache will not be published') from error
+        try:
+            code = process.wait(timeout=105)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(f'{label} did not shut down; cache will not be published') from error
+    if code != 0:
+        raise RuntimeError(f'{label} did not shut down cleanly; cache will not be published')
+
+
 def provision(guest: Guest, options: Options, dependencies: str, output: ProcessOutput) -> None:
     with output.stage('Provision plugin-free OMV base'):
         dependency_file = guest.directory / 'plugin-depends.txt'
         dependency_file.write_text(dependencies)
-        guest.copy(SOURCE / 'tests/integration/provision_guest.py', dependency_file)
+        guest.copy(
+            SOURCE / 'tests/integration/provision_guest.py',
+            SOURCE / 'tests/integration/vm_packages.py',
+            SOURCE / 'tests/integration/vm_seed_identity.py',
+            dependency_file,
+        )
         guest.python(
             output,
             '/root/provision_guest.py',
@@ -396,6 +436,7 @@ def boot(options: Options, image: Path, output: ProcessOutput, *, label: str = '
         accelerator = 'kvm' if os.access('/dev/kvm', os.R_OK | os.W_OK) else 'tcg'
         output.console.print(f'Acceleration: {accelerator}; logs: {options.reports.resolve()}')
         command = qemu_command(directory, options.reports.resolve() / (label + 'serial.log'), {22: port})
+        command.extend(['-qmp', f'unix:{directory / "control.sock"},server=on,wait=off'])
         try:
             with subprocess.Popen(command, stdin=subprocess.DEVNULL) as process:
                 try:
@@ -421,11 +462,26 @@ def base_inputs(options: Options, dependencies: str) -> dict[str, str]:
     return {
         'image': fingerprint(options.image),
         'provision': fingerprint(SOURCE / 'tests/integration/provision_guest.py'),
-        'harness': fingerprint(Path(__file__)),
+        'packages': fingerprint(SOURCE / 'tests/integration/vm_packages.py'),
+        'identity': fingerprint(SOURCE / 'tests/integration/vm_seed_identity.py'),
+        'harness': base_recipe_fingerprint(Path(__file__)),
         'cache': fingerprint(SOURCE / 'tools/vm_cache.py'),
         'dependencies': dependencies,
         'qemu': run('qemu-system-x86_64', '--version', capture_output=True, text=True).stdout,
     }
+
+
+def base_recipe_fingerprint(path: Path) -> str:
+    """Track provisioning code without invalidating the base for test-runner edits."""
+    tree = ast.parse(path.read_text())
+    # New helpers enter the recipe by default; only entry points that run on top of a base are excluded.
+    excluded = {'test_guest', 'run_vm', 'resolve_base', 'main'}
+    recipe = [
+        node
+        for node in tree.body
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in excluded)
+    ]
+    return hashlib.sha256(ast.dump(ast.Module(body=recipe, type_ignores=[])).encode()).hexdigest()
 
 
 def build_base(destination: Path, options: Options, dependencies: str, output: ProcessOutput) -> None:
@@ -440,8 +496,7 @@ def build_base(destination: Path, options: Options, dependencies: str, output: P
                 '--seal',
                 source_package_name(),
             )
-            if guest.process is None or guest.process.wait(timeout=120) != 0:
-                raise RuntimeError('Base VM did not shut down cleanly; cache will not be published')
+            wait_for_sealed_shutdown(guest, 'Base VM', output)
             run('qemu-img', 'convert', '-O', 'qcow2', str(guest.directory / 'disk.qcow2'), str(destination))
             run('qemu-img', 'check', str(destination))
 

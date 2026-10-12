@@ -8,6 +8,11 @@ from pathlib import Path
 from cli_options import parse_options
 from tool_data import decode, mapping, string
 
+if __package__:
+    from .smoke_packages import BOOTSTRAP
+else:
+    from smoke_packages import BOOTSTRAP
+
 SOURCE = Path(__file__).resolve().parents[2]
 DEBIAN = mapping(decode((SOURCE / 'config/sources.json').read_text())['debian-container'])
 IMAGE = f'{string(DEBIAN["image"])}:{string(DEBIAN["tag"])}@{string(DEBIAN["digest"])}'
@@ -55,7 +60,8 @@ def main(options: Options):
         # The minimal base image has no Python. Bootstrap just the guest interpreter.
         subprocess.run(['docker', 'exec', name, 'apt-get', 'update', '-qq'], check=True)
         subprocess.run(
-            ['docker', 'exec', name, 'apt-get', 'install', '-y', '--no-install-recommends', 'python3'], check=True
+            ['docker', 'exec', name, 'apt-get', 'install', '-y', '--no-install-recommends', *BOOTSTRAP],
+            check=True,
         )
         subprocess.run(['docker', 'exec', name, 'python3', '/src/tests/integration/debian_guest.py'], check=True)
     finally:

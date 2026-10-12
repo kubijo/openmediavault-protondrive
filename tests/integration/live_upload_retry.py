@@ -54,7 +54,7 @@ def nft_items(*args: str) -> list[dict[str, JSONValue]]:
 
 
 def table_name(value: RetryRecord) -> str:
-    # Debian 12's nft JSON omits table comments, but always includes the name.
+    # nft JSON omits table comments, but always includes the name.
     return f'{TABLE}_{uuid.UUID(value["token"]).hex}'
 
 

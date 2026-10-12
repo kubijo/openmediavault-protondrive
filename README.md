@@ -1,7 +1,7 @@
 # OpenMediaVault Cloud Backup
 
-An OMV 7 plugin that archives NAS paths with filesystem metadata and copies them to cloud storage. Targets Debian 12
-amd64 with OMV 7.7.9 or newer in the 7.x series. Bundles Proton Drive CLI 0.8.0; the NAS does not need Nix.
+An OMV 8 plugin that archives NAS paths with filesystem metadata and copies them to cloud storage. Targets Debian 13
+amd64 with OMV 8.x. Bundles Proton Drive CLI 0.8.0; the NAS does not need Nix.
 
 ## Build and validate
 
@@ -16,7 +16,7 @@ just app::build
 The package is `result/*.deb`. `just dev::validate` runs the Nix-defined formatting, lint, tests and package build, and
 rejects untracked source files. Use `just dev::format` to apply formatting.
 
-Tooling uses Python 3.14 via uv/uv2nix; the installed runtime supports Debian's Python 3.11. Run `uv sync` for editor
+Tooling uses Python 3.14 via uv/uv2nix; the installed runtime supports Debian's Python 3.13. Run `uv sync` for editor
 dependencies in `.venv`. Nix assembles the package using the hash-pinned CLI source in `infra/nix/proton-cli.nix`.
 
 ## Configure

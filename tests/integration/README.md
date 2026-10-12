@@ -6,15 +6,17 @@ filesystem-backed Proton fixture; no account is required. See each command's `--
 | Command                 | Scope                                                                              |
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | `just dev::validate`    | Formatting, lint, types, unit tests and builds                                     |
-| `just test::debian`     | Debian 12 container: CLI, Python 3.11, metadata, keyring and Lintian               |
+| `just test::debian`     | Debian 13 container: CLI, Python 3.13, metadata, keyring and Lintian               |
 | `just test::vm`         | Fresh OMV overlay: installation, RPC, Salt, backup/restore and container recovery  |
 | `just test::regression` | VM service tests plus browser, restore faults, snapshot/restore/reset and teardown |
 
 VMs mount no host directories, Docker socket, credentials or NAS disks; the Debian container mounts source read-only.
-Disposable disks/containers are removed on failure too, unless retention is requested. Python 3.11 guests cover setgid
-and ACL/xattr tests skipped in the Nix sandbox. QEMU uses KVM when available, software emulation otherwise. Cold
-provisioning needs network access, disk space and roughly 30 minutes; apt dependencies are not snapshot-pinned. These
-checks are separate from hermetic validation.
+The VM boots a pinned Debian 13 cloud disk and installs OMV 8 from its apt repository. Each guest's apt packages are
+declared in its `*_packages.py` file; the Debian smoke container does not install OMV. Disposable disks/containers are
+removed on failure too, unless retention is requested. Python 3.13 guests cover setgid and ACL/xattr tests skipped in
+the Nix sandbox. QEMU uses KVM when available, software emulation otherwise. Cold provisioning needs network access,
+disk space and roughly 30 minutes; apt dependencies are not snapshot-pinned. These checks are separate from hermetic
+validation.
 
 ## Local regression lifecycle
 
@@ -32,9 +34,10 @@ signed-out CLI, concurrent browse and corrupt archive, then match an internal er
 | Run fixtures     | Every run                                  | Private overlay and fake remote |
 
 Builders serialize publication and check disks after clean shutdown. Clones receive fresh machine, SSH and backup
-identities. `--refresh-base` picks up apt updates and invalidates the installed descendant; old generations remain valid
-for existing overlays. `test::vm --no-cache` provisions from Debian without updating the cache. Remove `.tmp/vm-cache/`
-only when no VM uses it. Test results are never cached.
+identities. OMV removes cloud-init, so a test-only service reads SSH keys from each seed ISO. `--refresh-base` picks up
+apt updates and invalidates the installed descendant; old generations remain valid for existing overlays.
+`test::vm --no-cache` provisions from Debian without updating the cache. Remove `.tmp/vm-cache/` only when no VM uses
+it. Test results are never cached.
 
 Regression artifacts live in `.tmp/regression/run-*/`: `report.json` records commands, exits and logs; `browser/` holds
 screenshots and videos. Standalone VM logs live in `.tmp/vm-tests/`; use separate report directories for concurrent
@@ -100,7 +103,7 @@ The latter trashes only its disposable folder inside the development root.
 
 ## Remaining authenticated/manual release gates
 
-Use a disposable Debian 12 / OMV 7 amd64 VM, test containers and the dedicated Proton root.
+Use a disposable Debian 13 / OMV 8 amd64 VM, test containers and the dedicated Proton root.
 
 01. Verify package integrity, navigation, seeded sets, disabled scheduling, repeated Apply, service ownership and
     keyring.

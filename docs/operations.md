@@ -46,9 +46,6 @@ archives it. OMV Compose controls container state. A zero exit is insufficient p
 capture is reported as unverified. The archive and remote copies are checked independently. A second backup cannot run
 concurrently.
 
-Recovery of containers stopped by the previous plugin version remains available. When a legacy recovery record is
-pending, use **Recover containers** before another backup; failed attempts retain the record.
-
 **Cancel backup** waits for any active OMV Compose capture to finish before stopping the supervised job. Closing the
 browser leaves the job running. Configuration saves and Salt deployment check that no backup is active.
 
@@ -86,12 +83,11 @@ existing event queue handles unavailable mail delivery. Mail contains fixed acti
 login URLs, tokens, or raw command errors.
 
 A retry does not clear an observed backup failure until a new successful completion is observed. The runner records an
-increasing completion counter separately from the UI status, so clock corrections do not hide a successful retry. Older
-installations retain their latest observed completion timestamp until the successful runner establishes a counter
-baseline. The runner advances beyond both the completion record and the saved health counter, so losing or restoring an
-older completion record does not require extra successful backups to clear an incident. Rebooting, resetting systemd's
-failed state, or restoring an older status file cannot clear an incident. Interrupted runs, including cancelled runs,
-remain unhealthy until a successful backup. Container recovery has its own alert and clears when the recovery record is
+increasing completion counter separately from the UI status, so clock corrections do not hide a successful retry. The
+runner advances beyond both the completion record and the saved health counter, so losing or restoring an older
+completion record does not require extra successful backups to clear an incident. Rebooting, resetting systemd's failed
+state, or restoring an older status file cannot clear an incident. Interrupted runs, including cancelled runs, remain
+unhealthy until a successful backup. Container recovery has its own alert and clears when the recovery record is
 removed, even if the backup still needs retrying. An unavailable daemon does not clear an existing authentication alert.
 Invalid or unreadable health inputs fail the check instead of reporting success. The checks retain their last conclusive
 observations in root-owned `health-*.json` files in the plugin state directory; they never rewrite backup or recovery

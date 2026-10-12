@@ -7,7 +7,7 @@ and leave dependencies, locks and installed environments unchanged. Reports perf
 
 nix-tools reads Nix inputs, GitHub Actions and four dependency projects: UV `tooling` (`.`) and `api` (`src/api`), pnpm
 `probe` (`tools/web-probe`) and `app` (`src/web/app`). `infra/nix/maintenance.nix` declares release sources;
-`tools/outdated.py` supplies Proton downloads, Debian images, runner labels and the Debian 12 / OMV 7 / Python 3.11
+`tools/outdated.py` supplies Proton downloads, Debian images, runner labels and the Debian 13 / OMV 8 / Python 3.13
 compatibility constraint.
 
 GitHub providers use `GH_TOKEN` or `GITHUB_TOKEN`; reuse CLI authentication with `export GH_TOKEN="$(gh auth token)"`.

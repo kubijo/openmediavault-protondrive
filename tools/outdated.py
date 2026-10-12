@@ -155,8 +155,8 @@ def application(root: Path) -> list[Result]:
         Result(
             'NAS runtime',
             'pinned',
-            'Debian 12 / OMV 7 / Python 3.11',
-            detail='Compatibility target: Debian-maintained Python 3.11. Tooling Python is reported separately.',
+            'Debian 13 / OMV 8 / Python 3.13',
+            detail='Compatibility target: Debian-maintained Python 3.13. Tooling Python is reported separately.',
         )
     )
     return results

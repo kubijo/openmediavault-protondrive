@@ -16,23 +16,19 @@ Depends:
  ca-certificates,
  dbus,
  gnome-keyring,
- libc6 (>= 2.36),
+ libc6 (>= 2.41),
  libgcc-s1,
  libsecret-1-0,
  libstdc++6,
- openmediavault (<< 8),
- openmediavault (>= 7.7.9),
+ openmediavault (<< 9),
+ openmediavault (>= 8),
  passwd,
- python3 (<< 3.12),
- python3 (>= 3.11),
+ python3 (<< 3.14),
+ python3 (>= 3.13),
  rsync,
  tar (>= 1.31),
  zstd,
-Breaks:
- openmediavault-protondrive,
-Replaces:
- openmediavault-protondrive,
 Description: OpenMediaVault backups to cloud storage
  Archive selected NAS paths with ownership, ACLs and extended attributes,
- preserve legacy container recovery, and copy timestamped backups to enabled
- cloud destinations. Proton Drive is the first supported provider.
+ and copy timestamped backups to enabled cloud destinations. Proton Drive is
+ the first supported provider.

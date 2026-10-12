@@ -28,7 +28,7 @@ protondrive-api = { path = "src/api" }
 cache-dir = ".tmp/ruff_cache"
 line-length = 120
 src = ["src", "src/api", "tools", "tools/tests", "tests/unit", "tests/integration"]
-target-version = "py311" # Guest code must remain valid on Debian's Python 3.11.
+target-version = "py311" # Conservative syntax floor; the guest runs on Debian's Python 3.13.
 
 [tool.ruff.format]
 quote-style = "single"
@@ -41,7 +41,7 @@ typeCheckingMode = "strict"
 reportAny = "error"
 reportExplicitAny = "error"
 strictGenericNarrowing = true
-pythonVersion = "3.11"
+pythonVersion = "3.13"
 pythonPlatform = "Linux"
 
 [tool.deptry]

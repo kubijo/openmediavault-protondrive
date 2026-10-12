@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -40,6 +41,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 
 INSTALL_MODULES = ('monit', 'nginx', 'phpfpm', 'protondrive')
 DIRTY_MODULES = Path('/var/lib/openmediavault/dirtymodules.json')
+AUTH_SNIPPET = Path('/etc/nginx/openmediavault-webgui.d/90-protondrive.conf')
 
 
 def setup_traceback():
@@ -192,6 +194,30 @@ def brand_web_ui(
     run('systemctl', 'reload', 'nginx')
 
 
+def check_owned_rpc_transport(snippet: Path = AUTH_SNIPPET) -> None:
+    """Check the installed nginx route and its live PHP-FPM upstream before sealing."""
+    active = run('nginx', '-T', capture_output=True, text=True).stdout
+    if 'location ^~ /protondrive/rpc/ {' not in active or 'location = /protondrive-auth {' not in active:
+        raise RuntimeError('Owned RPC routes are absent from the active nginx configuration')
+    match = re.search(r'(?m)^\s*fastcgi_pass\s+unix:(/[^;]+);\s*$', snippet.read_text())
+    if match is None:
+        raise RuntimeError('Owned RPC authentication has no Unix FastCGI upstream')
+    upstream = Path(match.group(1))
+    last_error = 'socket missing'
+    for _ in range(10):
+        if upstream.is_socket():
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                    connection.settimeout(3)
+                    connection.connect(str(upstream))
+                print('PASS: owned RPC route and PHP-FPM socket are available', flush=True)
+                return
+            except OSError as error:
+                last_error = str(error)
+        time.sleep(1)
+    raise RuntimeError(f'Owned RPC FastCGI socket is unavailable: {upstream} ({last_error})')
+
+
 def main(package: Path, configuration: Path | None = None):
     if not Path('/var/lib/protondrive-interactive-vm').exists():
         raise SystemExit('Run using the interactive VM harness')
@@ -215,6 +241,7 @@ def main(package: Path, configuration: Path | None = None):
     apply_configuration(*INSTALL_MODULES)
     run('omv-mkworkbench', 'all')
     brand_web_ui()
+    check_owned_rpc_transport()
     run('dpkg', '--verify', name)
     run('systemctl', 'is-active', 'nginx', 'omv-protondrive', 'omv-protondrive-api', 'omv-protondrive-controller')
     print('PASS: real plugin installed; interactive state retained', flush=True)

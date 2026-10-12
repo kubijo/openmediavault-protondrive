@@ -1,6 +1,6 @@
 # Plugin source
 
-- `protondrive/`: Python runtime, compatible with Debian 12's Python 3.11.
+- `protondrive/`: Python runtime, compatible with Debian 13's Python 3.13.
 - `bin/`: command launchers and the private D-Bus/keyring session helper.
 - `omv/`: PHP RPC modules, configuration models, and workbench pages.
 - `salt/`: deployment states and service/configuration templates.

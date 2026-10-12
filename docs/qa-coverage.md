@@ -7,7 +7,7 @@ tests run weekly or manually. Local commands and CI use the same published nix-t
 
 | Source                    | Formatter       | Checks                                                                                        |
 | ------------------------- | --------------- | --------------------------------------------------------------------------------------------- |
-| Python                    | Ruff            | Ruff; strict basedpyright for all Python files; runtime and tooling tests; Debian Python 3.11 |
+| Python                    | Ruff            | Ruff; strict basedpyright for all Python files; runtime and tooling tests; Debian Python 3.13 |
 | Nix                       | nixfmt          | statix, deadnix; flake checks and package build                                               |
 | PHP `.inc`                | Mago            | Mago semantics, PHP syntax; OMV RPC in VM                                                     |
 | Shell, maintainer scripts | shfmt           | shellcheck; guest installation and session lifecycle                                          |
@@ -25,8 +25,9 @@ tests run weekly or manually. Local commands and CI use the same published nix-t
 
 Just modules, recipes, and the shared prelude are formatted by just and checked by its parser. The basedpyright gate
 checks the complete Python source and test tree, including executable fixtures, with Any and Unknown rejected. Both the
-checker and Ruff target Python 3.11 for Debian compatibility; Zed reads the same project configuration. Native deptry
-checks validate tooling and API dependency declarations separately, including generated API imports.
+checker targets Debian's Python 3.13; Ruff uses Python 3.11 as a conservative syntax floor. Zed reads the same project
+configuration. Native deptry checks validate tooling and API dependency declarations separately, including generated API
+imports.
 
 Whitespace-only formatting uses an explicit EditorConfig policy. Salt/Jinja have no semantic formatter; salt-lint rule
 205 is exempted only for Jinja extensions. Rendered JSON, YAML and unit INI syntax are checked locally; systemd

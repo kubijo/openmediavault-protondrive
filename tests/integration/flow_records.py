@@ -1,4 +1,4 @@
-"""Validated, Python 3.11-compatible records for recoverable live VM tests."""
+"""Validated records for recoverable live VM tests."""
 
 from typing import TypedDict
 

@@ -44,8 +44,7 @@ def build_installed(
                 120,
                 'seal',
             )
-            if guest.process is None or guest.process.wait(timeout=120) != 0:
-                raise RuntimeError('Installed VM did not shut down cleanly; cache will not be published')
+            vm_runtime.wait_for_sealed_shutdown(guest, 'Installed VM', output)
             vm_runtime.run('qemu-img', 'convert', '-O', 'qcow2', str(guest.directory / 'disk.qcow2'), str(destination))
             vm_runtime.run('qemu-img', 'check', str(destination))
 

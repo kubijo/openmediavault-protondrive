@@ -61,7 +61,7 @@ pkgs.runCommand "omv-protondrive-vm-tools"
     ) wheels}
     export PYTHONPATH="${src}/src:$TMPDIR/omv-protondrive-vm"
     export PYTHONDONTWRITEBYTECODE=1
-    ${pkgs.python311}/bin/python "$TMPDIR/omv-protondrive-vm/owned_restore_guest.py" --help > /dev/null
+    ${pkgs.python313}/bin/python "$TMPDIR/omv-protondrive-vm/owned_restore_guest.py" --help > /dev/null
     chmod u+w "$TMPDIR/omv-protondrive-vm/ui-cancel-bin"
     chmod +x "$TMPDIR/omv-protondrive-vm/ui-cancel-bin/tar.sh"
     ln -s tar.sh "$TMPDIR/omv-protondrive-vm/ui-cancel-bin/tar"

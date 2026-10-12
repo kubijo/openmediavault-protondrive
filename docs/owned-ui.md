@@ -1,8 +1,7 @@
 # Owned web application
 
 `/protondrive/` uses OMV sessions, configuration and Save/Apply. It provides account and backup controls, settings,
-backup sets, optional OMV Compose sources, operation URLs, remote browsing and selected-file extraction. The legacy
-workbench remains read-only during migration.
+backup sets, optional OMV Compose sources, operation URLs, remote browsing and selected-file extraction.
 
 Acceptance on 2026-10-07 passed disposable VM lifecycle/cache reuse and authenticated restore, metadata, collision
 rejection, cancellation, controller crash, browser reload, separate-process recovery and corrupt CLI lock repair.
@@ -19,8 +18,6 @@ controller, and matched an internal error reference to its journal entry.
   back failed publication, cancellation and reboot during publication. Never replace system files on the running host.
 - [ ] Check CPU compatibility before upgrading Proton CLI: the 0.9.0 download index omits our `linux-x64-baseline`
   build.
-- [ ] Verify existing configuration and archives before retiring the legacy view. Sets with retired container controls
-  remain paused until reviewed in the owned UI; old archives stay readable.
 
 ## Extraction and recovery
 
@@ -53,7 +50,7 @@ repair during managed CLI operations. Account credentials remain intact.
 Each enabled set produces one local archive and uploads it to every enabled destination. Receipts are per archive and
 destination; failed targets are retried without reuploading confirmed copies. Local retention counts an archive only
 after all currently enabled targets confirm it. Backend authentication, status, browsing and archive inspection use a
-destination ID. Existing installations map their single Proton root to the `protondrive` destination automatically.
+destination ID.
 
 - `src/web/app`: React Compiler, Rsbuild, Mantine, Sass modules, React Router Data Mode, Connect-Query and TanStack
   Form.
@@ -64,10 +61,7 @@ destination ID. Existing installations map their single Proton root to the `prot
   controller.
 - SQLAlchemy/Alembic SQLite journal: request UUIDs prevent duplicate admission; event cursors support reconnect.
   Abandoned jobs become interrupted on restart rather than replaying side effects.
-- Debian bundles hash-pinned CPython 3.11 wheels and declares native dependencies.
-
-Existing stop-all and explicit container scopes are paused on upgrade. The old recovery command remains available for
-any containers stopped by a run before the upgrade.
+- Debian bundles hash-pinned CPython 3.13 wheels and declares native dependencies.
 
 Use `nix run .#generate-api` to regenerate bindings, `just dev::validate` to check the build, and
 `just vm::probe --help` for browser assertions and artifacts.

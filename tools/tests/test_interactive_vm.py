@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Unpack, cast
+from typing import Self, Unpack, cast
 from unittest.mock import Mock, patch
 
 from rich.console import Console
@@ -396,11 +396,13 @@ class InteractiveVMTests(unittest.TestCase):
             patch.object(guest, 'initialize') as initialize,
             patch.object(guest, 'wait_for_monit') as wait,
             patch.object(guest, 'brand_web_ui'),
+            patch.object(guest, 'check_owned_rpc_transport') as rpc_probe,
             patch.object(guest, 'check_pending_changes'),
             patch.dict(guest.os.environ),
         ):
             guest.main(Path('/tmp/plugin.deb'))
         initialize.assert_not_called()
+        rpc_probe.assert_called_once_with()
         self.assertIn('--reinstall', run.call_args_list[0].args)
         wait.assert_called_once()
 
@@ -440,6 +442,7 @@ class InteractiveVMTests(unittest.TestCase):
             patch.object(guest, 'run', side_effect=record_step),
             patch.object(guest, 'wait_for_monit', side_effect=lambda: steps.append(('ready',))),
             patch.object(guest, 'brand_web_ui'),
+            patch.object(guest, 'check_owned_rpc_transport'),
             patch.object(guest, 'check_pending_changes'),
             patch.dict(guest.os.environ),
         ):
@@ -541,6 +544,7 @@ class InteractiveVMTests(unittest.TestCase):
             patch.object(guest, 'wait_for_monit'),
             patch.object(guest, 'apply_configuration') as apply,
             patch.object(guest, 'brand_web_ui'),
+            patch.object(guest, 'check_owned_rpc_transport'),
             patch.dict(guest.os.environ),
         ):
             guest.main(Path('/tmp/plugin.deb'))
@@ -642,6 +646,47 @@ class InteractiveVMTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_installed_layer_requires_active_rpc_route_and_live_php_socket(self):
+        class Connection:
+            connected: str | None = None
+
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+                pass
+
+            def settimeout(self, _timeout: float) -> None:
+                pass
+
+            def connect(self, path: str) -> None:
+                self.connected = path
+
+        active = 'location ^~ /protondrive/rpc/ {\nlocation = /protondrive-auth {\n'
+        snippet = self.root / '90-protondrive.conf'
+        snippet.write_text('location = /protondrive-auth {\n    fastcgi_pass unix:/run/php/omv.sock;\n}\n')
+        connection = Connection()
+        with (
+            patch.object(guest_module, 'run', return_value=Mock(stdout=active)),
+            patch.object(guest_module.Path, 'is_socket', return_value=True),
+            patch.object(guest_module.socket, 'socket', return_value=connection),
+        ):
+            guest_module.check_owned_rpc_transport(snippet)
+        self.assertEqual(connection.connected, '/run/php/omv.sock')
+
+        with (
+            patch.object(guest_module, 'run', return_value=Mock(stdout='')),
+            self.assertRaisesRegex(RuntimeError, 'absent from the active nginx configuration'),
+        ):
+            guest_module.check_owned_rpc_transport(snippet)
+        with (
+            patch.object(guest_module, 'run', return_value=Mock(stdout=active)),
+            patch.object(guest_module.Path, 'is_socket', return_value=False),
+            patch.object(guest_module.time, 'sleep'),
+            self.assertRaisesRegex(RuntimeError, 'FastCGI socket is unavailable'),
+        ):
+            guest_module.check_owned_rpc_transport(snippet)
 
     def test_remote_pty_has_closed_input_and_plain_mode_does_not_request_pty(self):
         guest = vm_runtime.guest_connection(self.root, self.root / 'key', 2222)

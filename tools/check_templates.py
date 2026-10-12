@@ -104,8 +104,7 @@ for route in routes:
         )
     if component['type'] != 'formPage' or not mapping(mapping(component['config']).get('request', {})).get('get'):
         continue
-    # OMV 7 drops editing metadata when a component route becomes a parent.
-    # Such a form renders but never executes its get request or starts polling.
+    # Parent form routes can lose editing metadata and stop loading data.
     assert not any(string(other['url']).startswith(string(route['url']) + '/') for other in routes), (
         f'Data-loading form must use a leaf route: {route["url"]}'
     )
