@@ -71,6 +71,13 @@ class Control:
     ) -> wire.ListContainersResponse:
         return (await self.call(wire.BrokerRequest(containers=request), ctx)).containers
 
+    async def list_compose_sources(
+        self,
+        request: wire.ListComposeSourcesRequest,
+        ctx: RequestContext[wire.ListComposeSourcesRequest, wire.ListComposeSourcesResponse],
+    ) -> wire.ListComposeSourcesResponse:
+        return (await self.call(wire.BrokerRequest(compose_sources=request), ctx)).compose_sources
+
     async def call(self, request: wire.BrokerRequest, ctx: RequestContext[Request, Response]) -> wire.BrokerResponse:
         actor = ctx.request_headers.get('x-protondrive-user', '')
         if ctx.request_headers.get('x-protondrive-authenticated') != '1' or not re.fullmatch(

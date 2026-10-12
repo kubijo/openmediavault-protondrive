@@ -144,7 +144,10 @@ async function completed(page: Page): Promise<void> {
 }
 
 async function preview(page: Page, archiveUrl: string, destination: string): Promise<void> {
+    const loaded = page.waitForResponse(response => response.url().endsWith('/GetArchive'));
     await page.goto(archiveUrl);
+    const response = await loaded;
+    requireCondition(response.ok(), `Archive request failed with HTTP ${response.status()}`);
     await page.getByRole('checkbox', { name: 'data/interactive-fixtures/system/example.txt', exact: true }).check();
     await page.getByRole('textbox', { name: 'New extraction directory', exact: true }).fill(destination);
     await page.getByRole('button', { name: 'Preview extraction', exact: true }).click();

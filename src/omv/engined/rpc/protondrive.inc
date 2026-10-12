@@ -81,9 +81,16 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
         return str_starts_with($value, 'json:') ? substr($value, 5) : $value;
     }
 
+    private function hasComposeApps($value)
+    {
+        $value = $this->exposedJson($value);
+        return $value !== '' && json_decode($value, true, 512, JSON_THROW_ON_ERROR) !== [];
+    }
+
     private function exposedSet($value)
     {
         $value['composeapps'] = $this->exposedJson($value['composeapps'] ?? '');
+        $value['composesources'] = $this->exposedJson($value['composesources'] ?? '');
         return $value;
     }
 
@@ -162,11 +169,23 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
     {
         $this->admin($context);
         $this->validateMethodParams($params, 'rpc.protondrive.setSet');
+        if (
+            $params['stopcontainers']
+            || !empty($params['containerids'])
+            || !empty($params['composeprojects'])
+            || $this->hasComposeApps($params['composeapps'] ?? '')
+        ) {
+            throw new \RuntimeException(
+                'Review backup sources in the Cloud Backup interface; container controls are retired',
+            );
+        }
         $this->command('check-idle');
         $object = new \OMV\Config\ConfigObject('conf.service.protondrive.set');
         $stored = $params;
-        if (array_key_exists('composeapps', $stored)) {
-            $stored['composeapps'] = $this->storedJson($stored['composeapps']);
+        foreach (['composeapps', 'composesources'] as $property) {
+            if (array_key_exists($property, $stored)) {
+                $stored[$property] = $this->storedJson($stored[$property]);
+            }
         }
         $object->setAssoc($stored, true, true);
         $candidate = $object->getAssoc();
@@ -176,10 +195,15 @@ class ProtonDrive extends \OMV\Rpc\ServiceAbstract
                 if ($item['name'] !== $candidate['name']) {
                     throw new \RuntimeException('Backup set names cannot be changed');
                 }
-                foreach (['containerids', 'composeprojects', 'composeapps'] as $property) {
+                foreach (['containerids', 'composeprojects', 'composeapps', 'composesources'] as $property) {
                     if (!array_key_exists($property, $params)) {
                         $value = $item[$property] ?? '';
-                        $object->set($property, $property === 'composeapps' ? $this->storedJson($value) : $value);
+                        $object->set(
+                            $property,
+                            in_array($property, ['composeapps', 'composesources'], true)
+                                ? $this->storedJson($value)
+                                : $value,
+                        );
                     }
                 }
             } else {

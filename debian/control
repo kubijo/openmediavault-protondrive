@@ -25,6 +25,7 @@ Depends:
  passwd,
  python3 (<< 3.12),
  python3 (>= 3.11),
+ rsync,
  tar (>= 1.31),
  zstd,
 Breaks:
@@ -33,5 +34,5 @@ Replaces:
  openmediavault-protondrive,
 Description: OpenMediaVault backups to cloud storage
  Archive selected NAS paths with ownership, ACLs and extended attributes,
- restore stopped containers, and copy timestamped backups to enabled cloud
- destinations. Proton Drive is the first supported provider.
+ preserve legacy container recovery, and copy timestamped backups to enabled
+ cloud destinations. Proton Drive is the first supported provider.

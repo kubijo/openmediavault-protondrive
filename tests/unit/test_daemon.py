@@ -9,6 +9,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Protocol
 from unittest.mock import Mock, patch
 
 from helpers import configuration
@@ -48,6 +49,30 @@ def run_service(path: Path) -> None:
         patch.object(daemon, 'load', return_value={}),
     ):
         daemon.serve()
+
+
+class ServiceProcess(Protocol):
+    @property
+    def exitcode(self) -> int | None: ...
+
+    def is_alive(self) -> bool: ...
+
+
+def wait_for_service(path: Path, process: ServiceProcess) -> None:
+    deadline = time.monotonic() + 5
+    with patch('protondrive.common.SOCKET', path):
+        while True:
+            try:
+                request('ready', timeout=0.5)
+                return
+            except BackupError as exc:
+                if exc.code != 'unavailable':
+                    raise
+                if not process.is_alive():
+                    raise AssertionError(f'Service exited: {process.exitcode}') from exc
+                if time.monotonic() >= deadline:
+                    raise AssertionError('Service did not become ready') from exc
+                time.sleep(0.01)
 
 
 class DaemonTests(unittest.TestCase):
@@ -198,11 +223,7 @@ class DaemonTests(unittest.TestCase):
             process = multiprocessing.get_context('fork').Process(target=run_service, args=(path,))
             process.start()
             try:
-                deadline = time.monotonic() + 5
-                while not path.exists():
-                    self.assertTrue(process.is_alive(), f'Service exited: {process.exitcode}')
-                    self.assertLess(time.monotonic(), deadline, 'Service socket was not created')
-                    time.sleep(0.01)
+                wait_for_service(path, process)
                 with socket.socket(socket.AF_UNIX) as client:
                     client.connect(str(path))
                     client.sendall(b'{"operation":"disconnect"}\n')
@@ -227,11 +248,7 @@ class DaemonTests(unittest.TestCase):
             process = multiprocessing.get_context('fork').Process(target=run_service, args=(path,))
             process.start()
             try:
-                deadline = time.monotonic() + 5
-                while not path.exists():
-                    self.assertTrue(process.is_alive())
-                    self.assertLess(time.monotonic(), deadline)
-                    time.sleep(0.01)
+                wait_for_service(path, process)
                 with patch('protondrive.common.SOCKET', path):
                     with self.assertRaises(BackupError) as busy:
                         request('busy')

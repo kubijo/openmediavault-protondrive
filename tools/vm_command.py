@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     request.add_argument('operation', choices=('status', 'probe', 'prepare'))
     request.add_argument('--set-uuid')
     commands.add_parser('crash-reboot', help='Abruptly reboot only an armed development crash-recovery fixture')
-    commands.add_parser('flow-lease', help='Hold a host flow lock across guest reboots until standard input closes')
+    commands.add_parser('flow-lease', help='Hold a host flow lock until standard input closes')
     options = parser.parse_args(argv, namespace=Arguments())
     if options.action == 'flow-lease':
         with VMState(options.state_dir.resolve()).lock('live-flow'):

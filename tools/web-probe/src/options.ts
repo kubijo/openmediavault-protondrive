@@ -20,7 +20,6 @@ export type ProbeOptions = {
     ownedUiInterrupt: boolean;
     ownedUiForeign: boolean;
     uploadRetry: boolean;
-    crashRecovery: boolean;
     recover: boolean;
     widths: number[];
     expectedHour?: number;
@@ -104,7 +103,6 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         )
         .option('--headed', 'Show the browser window')
         .option('--upload-retry', 'Test real upload interruption and pending retry (requires --live)')
-        .option('--crash-recovery', 'Test SIGKILL and abrupt VM reboot recovery (requires --live)')
         .option('--recover', 'Recover abandoned fixtures (requires --live or --owned-ui-restore)')
         .option('--json', 'Print a JSON result')
         .exitOverride();
@@ -130,8 +128,6 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
     if (values.recover && !values.live && !values.ownedUiRestore)
         throw new Error('--recover requires --live or --owned-ui-restore');
     if (values.uploadRetry && !values.live) throw new Error('--upload-retry requires --live');
-    if (values.crashRecovery && !values.live) throw new Error('--crash-recovery requires --live');
-    if (values.crashRecovery && values.uploadRetry) throw new Error('Choose either --crash-recovery or --upload-retry');
     const widths = values.width.length ? values.width : values.live || values.ownedUiRestore ? [420] : DEFAULT_WIDTHS;
     if (values.live && (widths.length !== 1 || values.changeHour !== undefined || values.changeRoot !== undefined)) {
         throw new Error('--live requires one viewport and cannot be combined with settings changes');
@@ -183,7 +179,6 @@ export function optionsFromArgs(argv: string[] = process.argv.slice(2)): ProbeOp
         ownedUiInterrupt: values.ownedUiInterrupt ?? false,
         ownedUiForeign: values.ownedUiForeign ?? false,
         uploadRetry: values.uploadRetry ?? false,
-        crashRecovery: values.crashRecovery ?? false,
         recover: values.recover ?? false,
         widths,
         expectedHour: values.expectHour,

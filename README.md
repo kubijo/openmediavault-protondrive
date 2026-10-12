@@ -23,7 +23,7 @@ dependencies in `.venv`. Nix assembles the package using the hash-pinned CLI sou
 
 1. Complete the [isolated tests and release checks](tests/integration/README.md) before installing on the NAS.
 2. Install the built package with `apt install ./result/*.deb`.
-3. Open **Services → Proton Drive**, review Settings and Backup sets, save, and Apply.
+3. Open the Cloud Backup console from **Services → Proton Drive**, review Settings and Backup sets, save, and Apply.
 4. Select **Sign in** and complete authentication through the Proton browser link.
 5. Run a manual backup and [test restoring it](docs/restore.md), then enable scheduled backups.
 
@@ -32,14 +32,16 @@ Scheduling starts disabled; the default time is 03:00 in the NAS timezone, with 
 The **Open backup console** link opens the [owned web application](docs/owned-ui.md); its restore workflows are still
 under development.
 
-| Set     | Paths                                   | Excluded relative paths                         | Containers                   |
-| ------- | --------------------------------------- | ----------------------------------------------- | ---------------------------- |
-| system  | `/etc`, `/usr/local`, `/var/spool/cron` | None                                            | Keep running                 |
-| appData | `/data/appData`                         | `cache`, `logs`, `immich/cache`, `immich/redis` | Stop those currently running |
+| Set     | Paths                                   | Excluded relative paths                         | Initially enabled |
+| ------- | --------------------------------------- | ----------------------------------------------- | ----------------- |
+| system  | `/etc`, `/usr/local`, `/var/spool/cron` | None                                            | Yes               |
+| appData | `/data/appData`                         | `cache`, `logs`, `immich/cache`, `immich/redis` | No                |
 
 Staging defaults to `/data/.omv-protondrive`; each set retains two confirmed local backups and seven remote backups.
-Unuploaded archives are preserved. Containers restart before upload; cancellation and abnormal termination trigger
-recovery. **Cancel backup** stops the job; closing the browser leaves it running.
+Unuploaded archives are preserved. For Compose-managed data, select an OMV Compose backup job and its stack folders in
+the owned UI. The plugin runs the job, seals its output into private staging, and archives it. Capture remains best
+effort; the archive and uploads are checksum-verified. **Cancel backup** waits for any active Compose capture to finish
+before stopping the job.
 
 Remote retention moves expired backups to Proton's trash after identity checks. Avoid concurrent edits to managed remote
 folders. See [backup behavior and recovery](docs/operations.md) for storage layout, retention safeguards, service

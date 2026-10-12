@@ -1,11 +1,8 @@
 [Unit]
 Description=OMV Proton Drive backup
 Requires=omv-protondrive.service
-After=omv-protondrive.service omv-protondrive-recover.service docker.service
+After=omv-protondrive.service omv-protondrive-recover.service
 RequiresMountsFor={{ config.stagingpath | json }}
-{% for item in sets if item.stopcontainers | to_bool %}
-Wants=docker.service
-{% endfor %}
 
 [Service]
 Type=oneshot
@@ -14,8 +11,8 @@ ExecStartPre=/usr/sbin/omv-protondrive recover
 ExecStart=/usr/sbin/omv-protondrive run
 ExecStopPost=/usr/sbin/omv-protondrive recover
 TimeoutStartSec=infinity
-TimeoutStopSec=600
-KillMode=control-group
+TimeoutStopSec=infinity
+KillMode=mixed
 UMask=0077
 SyslogIdentifier=omv-protondrive
 StandardOutput=journal

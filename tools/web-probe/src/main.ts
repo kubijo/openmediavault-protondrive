@@ -13,7 +13,7 @@ import type { ProbeOptions } from './options.ts';
 import { optionsFromArgs } from './options.ts';
 import { checkOwnedUi } from './owned-ui.ts';
 import { Progress } from './progress.ts';
-import { prepareBrowserReboot, submitLogin } from './session.ts';
+import { submitLogin } from './session.ts';
 
 export type { ProbeOptions } from './options.ts';
 
@@ -190,17 +190,7 @@ async function runViewport(
             await progress.stage('Change backup root', () => changeRoot(page, options, root, screenshots), {
                 viewport: width,
             });
-        if (options.live)
-            await runLiveFlow(
-                page,
-                options,
-                artifacts,
-                progress,
-                signal,
-                () => login(page, options),
-                () => prepareBrowserReboot(page),
-                browserErrors,
-            );
+        if (options.live) await runLiveFlow(page, options, artifacts, progress, signal);
         signal.throwIfAborted();
         const errors = browserErrors.messages();
         requireCondition(errors.length === 0, `Browser errors at ${width}px: ${errors.join('; ')}`);

@@ -29,6 +29,8 @@ def backup_set(source: Path) -> BackupSet:
         stopcontainers=False,
         composeprojects='selected',
         composeapps=[{'project': 'selected', 'definitions': [str(definition)], 'envfiles': [], 'secretfiles': []}],
+        composesources=[],
+        migrationrequired=True,
         localkeep=2,
         remotekeep=7,
     )

@@ -2,6 +2,7 @@
 Description=Proton Drive privileged job controller
 After=openmediavault-engined.service omv-protondrive-recover.service
 Requires=openmediavault-engined.service
+ConditionPathIsDirectory=/var/lib/openmediavault-protondrive
 
 [Service]
 Type=simple

@@ -364,6 +364,14 @@
         };
         validate.steps = [
           {
+            name = "Python lock consistency";
+            run = "${pkgs.lib.getExe pkgs.uv} lock --check --offline --python ${qaPython}/bin/python";
+          }
+          {
+            name = "API Python lock consistency";
+            run = "${pkgs.lib.getExe pkgs.uv} lock --project src/api --check --offline --python ${qaPython}/bin/python";
+          }
+          {
             name = "Tracked source";
             run = pkgs.lib.getExe qa.tracked;
           }

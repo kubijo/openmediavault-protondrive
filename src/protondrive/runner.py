@@ -1,10 +1,11 @@
 """Root archive orchestration; every entry point is supervised by systemd."""
 
 import grp
-import json
 import logging
 import os
+import shutil
 import signal
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,11 +14,12 @@ from types import FrameType
 from .archive import archive, check_space, estimate, publish
 from .common import STATE, BackupError, atomic_json, locked, request
 from .completion import record_completion
-from .compose import ProjectCapture, capture, pull
-from .compose import manifest as compose_manifest
-from .config import load, remote_folder
-from .containers import selection
-from .json_data import JSONValue, decode, object_value
+from .compose_source import capture as capture_compose
+from .compose_source import inventory as compose_inventory
+from .compose_source import seal as seal_compose
+from .compose_source import validate_source
+from .config import lines, load, remote_folder
+from .json_data import JSONValue, decode, object_value, validate
 from .models import BackupSet, Configuration, Destination, Manifest
 from .operation import Cancelled
 from .recovery import Recovery
@@ -123,33 +125,56 @@ def run() -> None:
         config = load()
         recovery = Recovery()
         partials: list[tuple[BackupSet, Path]] = []
+        sealed_workspace: tempfile.TemporaryDirectory[str] | None = None
+        paused = [item['name'] for item in config['sets'] if item['enable'] and item['migrationrequired']]
         try:
-            status('preflight', error='', started=datetime.now(UTC).isoformat())
+            status(
+                'preflight',
+                error='',
+                started=datetime.now(UTC).isoformat(),
+                capture='',
+                paused=validate(paused),
+                sources=[],
+            )
             recovery.restore()
-            items = [item for item in config['sets'] if item['enable']]
+            items = [item for item in config['sets'] if item['enable'] and not item['migrationrequired']]
             if not items:
-                raise BackupError('No backup sets are enabled')
+                raise BackupError('No runnable backup sets; review paused container-scoped sets')
             for destination in enabled_destinations(config):
                 request('probe', destinationid=destination['id'])
-            captures: dict[str, tuple[ProjectCapture, ...]] = {}
+            sources_by_job: dict[str, set[str]] = {}
+            stack_owners: dict[str, str] = {}
             for item in items:
-                if item.get('composeapps'):
-                    status('capturing-compose', message=item['name'])
-                    captures[item['uuid']] = capture(item)
-                    if len(json.dumps(compose_manifest(captures[item['uuid']])).encode()) > 1047552:
-                        raise BackupError('Compose application metadata exceeds the manifest size limit')
-                    status('pulling-compose-images', message=item['name'])
-                    pull(captures[item['uuid']])
-            groups: dict[tuple[str, ...] | None, list[BackupSet]] = {}
-            for item in items:
-                groups.setdefault(selection(item), []).append(item)
-            gid = grp.getgrnam('protondrive').gr_gid
+                for source in item['composesources']:
+                    sources_by_job.setdefault(source['job_id'], set()).update(source['stacks'])
+                    for stack in source['stacks']:
+                        owner = stack_owners.setdefault(stack, source['job_id'])
+                        if owner != source['job_id']:
+                            raise BackupError(f'Compose stack {stack} is selected by different jobs')
             staging = Path(config['stagingpath'])
+            compose = compose_inventory() if sources_by_job else None
+            if sources_by_job and compose is None:
+                raise BackupError('OMV Compose backup is not installed')
+            if compose is not None:
+                backup_folder = compose.folder.resolve()
+                if backup_folder == staging or backup_folder in staging.parents or staging in backup_folder.parents:
+                    raise BackupError('OMV Compose backup folder and staging directory must not overlap')
+                for item in items:
+                    for source_path in lines(item['paths']):
+                        path = Path(source_path).resolve()
+                        if path == backup_folder or path in backup_folder.parents or backup_folder in path.parents:
+                            raise BackupError('OMV Compose backup folder overlaps a selected file source')
+                for job_id, stacks in sources_by_job.items():
+                    validate_source({'job_id': job_id, 'stacks': sorted(stacks)}, compose)
+            gid = grp.getgrnam('protondrive').gr_gid
             staging.mkdir(parents=True, exist_ok=True)
             os.chown(staging, 0, gid)
             os.chmod(staging, 0o750)
+            for stale in staging.glob('.compose-capture-*'):
+                if stale.is_symlink() or not stale.is_dir():
+                    raise BackupError('Invalid leftover Compose capture workspace')
+                shutil.rmtree(stale)
             timestamp = datetime.now(UTC).strftime('%Y%m%dT%H%MZ')
-            required = 0
             for item in items:
                 directory = staging / item['uuid']
                 directory.mkdir(exist_ok=True)
@@ -169,36 +194,78 @@ def run() -> None:
                     raise BackupError('A backup already exists for this minute; try again next minute')
                 for stale in directory.glob('*.tar.zst.partial'):
                     stale.unlink()
-                required += estimate(item)
+            sealed_by_job: dict[str, tuple[Path, ...]] = {}
+            if compose is not None:
+                sealed_workspace = tempfile.TemporaryDirectory(prefix='.compose-capture-', dir=staging)
+                for job_id, stacks in sources_by_job.items():
+                    status('capturing-compose', message=', '.join(sorted(stacks)), capture='unverified')
+                    captured = capture_compose(
+                        {'job_id': job_id, 'stacks': sorted(stacks)},
+                        compose,
+                        staging / f'compose-{job_id}.log',
+                    )
+                    status('sealing-compose', message=', '.join(sorted(stacks)))
+                    include_global_env = (
+                        compose.source_folder is not None
+                        and (compose.source_folder / 'global.env').is_file()
+                        and not (compose.source_folder / 'global.env').is_symlink()
+                    )
+                    sealed_by_job[job_id] = seal_compose(
+                        captured,
+                        Path(sealed_workspace.name) / job_id,
+                        include_global_env=include_global_env,
+                    )
+            extra_by_set: dict[str, tuple[Path, ...]] = {}
+            records_by_set: dict[str, list[dict[str, JSONValue]]] = {}
+            required = 0
+            for item in items:
+                extras = tuple(
+                    path
+                    for source in item['composesources']
+                    for path in sealed_by_job[source['job_id']]
+                    if path.name in source['stacks'] or path.name == 'global.env'
+                )
+                extra_by_set[item['uuid']] = extras
+                records_by_set[item['uuid']] = (
+                    [object_value({'kind': 'files', 'paths': item['paths'].splitlines(), 'capture': 'live'})]
+                    if item['paths'].strip()
+                    else []
+                )
+                records_by_set[item['uuid']].extend(
+                    object_value(
+                        {
+                            'kind': 'omv-compose',
+                            'job_id': source['job_id'],
+                            'stacks': source['stacks'],
+                            'capture': 'unverified',
+                        }
+                    )
+                    for source in item['composesources']
+                )
+                required += estimate(item, extras)
             check_space(staging, required, config['minimumfreebytes'])
-            for selected, group in groups.items():
-                sensitive = selected is None or bool(selected)
-                try:
-                    if sensitive:
-                        status('stopping-containers')
-                        if selected is None:
-                            recovery.stop(config['containerstoptimeout'])
-                        else:
-                            recovery.stop(config['containerstoptimeout'], selected)
-                    for item in group:
-                        if selected is not None and selection(item) != selected:
-                            raise BackupError(
-                                'Application containers changed during backup preflight; retry after deployment finishes'
-                            )
-                        partial = staging / item['uuid'] / f'{item["name"]}-{timestamp}.tar.zst.partial'
-                        status('archiving', message=item['name'])
-                        partials.append((item, partial))
-                        archive(item, partial, config['minimumfreebytes'])
-                finally:
-                    if sensitive:
-                        status('recovering-containers')
-                        recovery.restore()
+            for item in items:
+                partial = staging / item['uuid'] / f'{item["name"]}-{timestamp}.tar.zst.partial'
+                status('archiving', message=item['name'], sources=validate(records_by_set[item['uuid']]))
+                partials.append((item, partial))
+                archive(item, partial, config['minimumfreebytes'], extra_by_set[item['uuid']])
             results: dict[str, JSONValue] = {}
             for item, partial in partials:
                 status('verifying', message=item['name'])
-                final = publish(item, partial, config['instanceuuid'], timestamp, gid, captures.get(item['uuid'], ()))
+                final = publish(
+                    item,
+                    partial,
+                    config['instanceuuid'],
+                    timestamp,
+                    gid,
+                    source_records=records_by_set[item['uuid']],
+                )
                 upload_all(config, item, final)
-                results[item['name']] = {'archive': final.name, 'uploaded': datetime.now(UTC).isoformat()}
+                results[item['name']] = {
+                    'archive': final.name,
+                    'uploaded': datetime.now(UTC).isoformat(),
+                    'capture': 'unverified' if item['composesources'] else 'live',
+                }
                 status('retention', sets=results)
                 for destination in enabled_destinations(config):
                     request('prune', destinationid=destination['id'], setuuid=item['uuid'])
@@ -208,6 +275,7 @@ def run() -> None:
             status(
                 'completed',
                 sets=results,
+                paused=validate(paused),
                 lastsuccess=completed,
                 finished=datetime.now(UTC).isoformat(),
             )
@@ -243,3 +311,6 @@ def run() -> None:
                 code = 'internal'
             status('failed', error=message, errorcode=code, finished=datetime.now(UTC).isoformat())
             raise
+        finally:
+            if sealed_workspace is not None:
+                sealed_workspace.cleanup()

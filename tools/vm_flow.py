@@ -232,6 +232,7 @@ class Flow:
                     '--',
                     'journalctl',
                     '--unit=omv-protondrive-controller',
+                    '--unit=omv-protondrive-api',
                     '--unit=openmediavault-engined',
                     '--no-pager',
                     '--output=short-iso',

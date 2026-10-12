@@ -22,7 +22,7 @@ rows.
 
 ## Audit
 
-`infra/nix/maintenance.nix` runs every check, even after failures:
+`infra/nix/maintenance.nix` runs every check, even after failures. The offline lock checks also run in `validate`:
 
 - `uv lock --check --offline`: tooling and API manifest/lock consistency.
 - `uv audit --locked`: OSV Python advisories; excludes embedded vendor libraries and Debian packages.

@@ -57,6 +57,11 @@ def archive_metadata(value: object, instance: str, set_id: str, name: str, set_n
             raise BackupError('Invalid Compose manifest', code='invalid_archive') from exc
     elif 'compose' in value:
         raise BackupError('Unexpected Compose metadata in legacy manifest', code='invalid_archive')
+    if 'sources' in value:
+        raw_sources = value['sources']
+        if not isinstance(raw_sources, list) or len(raw_sources) > 32 or any(not is_object(raw) for raw in raw_sources):
+            raise BackupError('Invalid source metadata', code='invalid_archive')
+        result['sources'] = [object_value(raw) for raw in raw_sources]
     return result
 
 

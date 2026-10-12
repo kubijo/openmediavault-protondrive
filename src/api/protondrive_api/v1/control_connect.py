@@ -18,7 +18,7 @@ from connectrpc.protocol import ProtocolType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from pyqwest import Client, SyncClient
 
-from .control_pb2 import BrowseBackupsRequest, BrowseBackupsResponse, BrowseDirectoriesRequest, BrowseDirectoriesResponse, CancelJobRequest, CancelJobResponse, DeleteSetRequest, DeleteSetResponse, GetArchiveRequest, GetArchiveResponse, GetConfigurationRequest, GetConfigurationResponse, GetJobRequest, GetJobResponse, GetStatusRequest, GetStatusResponse, ListArchivesRequest, ListArchivesResponse, ListContainersRequest, ListContainersResponse, ListSetsRequest, ListSetsResponse, PreviewExtractionRequest, PreviewExtractionResponse, ReleaseArchiveRequest, ReleaseArchiveResponse, SaveConfigurationRequest, SaveConfigurationResponse, SaveSetRequest, SaveSetResponse, StartOperationRequest, StartOperationResponse, WatchJobRequest, WatchJobResponse
+from .control_pb2 import BrowseBackupsRequest, BrowseBackupsResponse, BrowseDirectoriesRequest, BrowseDirectoriesResponse, CancelJobRequest, CancelJobResponse, DeleteSetRequest, DeleteSetResponse, GetArchiveRequest, GetArchiveResponse, GetConfigurationRequest, GetConfigurationResponse, GetJobRequest, GetJobResponse, GetStatusRequest, GetStatusResponse, ListArchivesRequest, ListArchivesResponse, ListComposeSourcesRequest, ListComposeSourcesResponse, ListContainersRequest, ListContainersResponse, ListSetsRequest, ListSetsResponse, PreviewExtractionRequest, PreviewExtractionResponse, ReleaseArchiveRequest, ReleaseArchiveResponse, SaveConfigurationRequest, SaveConfigurationResponse, SaveSetRequest, SaveSetResponse, StartOperationRequest, StartOperationResponse, WatchJobRequest, WatchJobResponse
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Iterator, Mapping
@@ -66,6 +66,9 @@ class ControlService(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     async def list_containers(self, request: ListContainersRequest, ctx: RequestContext[ListContainersRequest, ListContainersResponse], /) -> ListContainersResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    async def list_compose_sources(self, request: ListComposeSourcesRequest, ctx: RequestContext[ListComposeSourcesRequest, ListComposeSourcesResponse], /) -> ListComposeSourcesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     async def browse_backups(self, request: BrowseBackupsRequest, ctx: RequestContext[BrowseBackupsRequest, BrowseBackupsResponse], /) -> BrowseBackupsResponse:
@@ -209,6 +212,16 @@ class ControlServiceASGIApplication(ConnectASGIApplication[ControlService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.list_containers,
+                ),
+                "/protondrive_api.v1.ControlService/ListComposeSources": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ListComposeSources",
+                        service_name="protondrive_api.v1.ControlService",
+                        input=ListComposeSourcesRequest,
+                        output=ListComposeSourcesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.list_compose_sources,
                 ),
                 "/protondrive_api.v1.ControlService/BrowseBackups": Endpoint.unary(
                     method=MethodInfo(
@@ -528,6 +541,26 @@ class ControlServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def list_compose_sources(
+        self,
+        request: ListComposeSourcesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> ListComposeSourcesResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListComposeSources",
+                service_name="protondrive_api.v1.ControlService",
+                input=ListComposeSourcesRequest,
+                output=ListComposeSourcesResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def browse_backups(
         self,
         request: BrowseBackupsRequest,
@@ -682,6 +715,9 @@ class ControlServiceSync(Protocol):
     def list_containers(self, request: ListContainersRequest, ctx: RequestContext[ListContainersRequest, ListContainersResponse], /) -> ListContainersResponse:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    def list_compose_sources(self, request: ListComposeSourcesRequest, ctx: RequestContext[ListComposeSourcesRequest, ListComposeSourcesResponse], /) -> ListComposeSourcesResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
     def browse_backups(self, request: BrowseBackupsRequest, ctx: RequestContext[BrowseBackupsRequest, BrowseBackupsResponse], /) -> BrowseBackupsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -821,6 +857,16 @@ class ControlServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.list_containers,
+                ),
+                "/protondrive_api.v1.ControlService/ListComposeSources": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ListComposeSources",
+                        service_name="protondrive_api.v1.ControlService",
+                        input=ListComposeSourcesRequest,
+                        output=ListComposeSourcesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.list_compose_sources,
                 ),
                 "/protondrive_api.v1.ControlService/BrowseBackups": EndpointSync.unary(
                     method=MethodInfo(
@@ -1124,6 +1170,25 @@ class ControlServiceClientSync(ConnectClientSync):
                 service_name="protondrive_api.v1.ControlService",
                 input=ListContainersRequest,
                 output=ListContainersResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+    def list_compose_sources(
+        self,
+        request: ListComposeSourcesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> ListComposeSourcesResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListComposeSources",
+                service_name="protondrive_api.v1.ControlService",
+                input=ListComposeSourcesRequest,
+                output=ListComposeSourcesResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

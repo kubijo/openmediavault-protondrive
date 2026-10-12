@@ -13,6 +13,7 @@ from .common import BackupError, atomic_json, sync_directory
 from .compose import ProjectCapture
 from .compose import manifest as compose_manifest
 from .config import lines
+from .json_data import JSONValue
 from .models import BackupSet, Manifest
 
 
@@ -20,8 +21,8 @@ def excluded(path: Path, sources: list[Path], excludes: list[str]) -> bool:
     return any(path == source / value or source / value in path.parents for source in sources for value in excludes)
 
 
-def estimate(item: BackupSet) -> int:
-    sources = [Path(p) for p in lines(item['paths'])]
+def estimate(item: BackupSet, extra_sources: tuple[Path, ...] = ()) -> int:
+    sources = [Path(p) for p in lines(item['paths'])] + list(extra_sources)
     excludes = lines(item['excludes'])
     size = 1024 * 1024
     seen: set[tuple[int, int]] = set()
@@ -53,9 +54,9 @@ def check_space(directory: str | Path, required: int, reserve: int) -> None:
         raise BackupError(f'Insufficient staging space: need {required + reserve} free bytes')
 
 
-def archive(item: BackupSet, partial: Path, reserve: int) -> None:
+def archive(item: BackupSet, partial: Path, reserve: int, extra_sources: tuple[Path, ...] = ()) -> None:
     """Return only after tar and its compressor have exited; kill both on failure."""
-    sources = lines(item['paths'])
+    sources = lines(item['paths']) + [str(path) for path in extra_sources]
     fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     os.close(fd)
     args = [
@@ -121,6 +122,7 @@ def publish(
     timestamp: str,
     gid: int,
     captures: tuple[ProjectCapture, ...] = (),
+    source_records: list[dict[str, JSONValue]] | None = None,
 ) -> Path:
     subprocess.run(['zstd', '--test', '--quiet', str(partial)], check=True)
     final = partial.with_suffix('')
@@ -135,6 +137,8 @@ def publish(
     )
     if captures:
         metadata['compose'] = compose_manifest(captures)
+    if source_records:
+        metadata['sources'] = source_records
     os.chown(partial, 0, gid)
     os.chmod(partial, 0o640)
     # The run lock plus preflight collision checks protect this publication.

@@ -54,6 +54,10 @@
     "composeapps": {
       "type": "string",
       "default": ""
+    },
+    "composesources": {
+      "type": "string",
+      "default": ""
     }
   }
 }

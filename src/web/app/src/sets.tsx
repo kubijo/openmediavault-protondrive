@@ -1,6 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { useMutation, useQuery } from '@connectrpc/connect-query';
 import {
+    Alert,
     Button,
     Checkbox,
     Group,
@@ -20,12 +21,8 @@ import { useState } from 'react';
 
 import { queryClient } from './api.ts';
 import { Failure, Loading } from './components.tsx';
-import type { BackupSet } from './generated/protondrive_api/v1/control_pb.ts';
-import {
-    BackupSetSchema,
-    ComposeApplicationSchema,
-    ControlService,
-} from './generated/protondrive_api/v1/control_pb.ts';
+import type { BackupSet, ComposeSource } from './generated/protondrive_api/v1/control_pb.ts';
+import { BackupSetSchema, ComposeSourceSchema, ControlService } from './generated/protondrive_api/v1/control_pb.ts';
 
 export function BackupSets(): ReactElement {
     const query = useQuery(ControlService.method.listSets);
@@ -54,20 +51,20 @@ export function BackupSets(): ReactElement {
                 <Paper key={item.id} component="section" aria-label={`Backup set ${item.name}`} withBorder p="md">
                     <Stack>
                         <Title order={2} children={item.name} />
-                        <Text children={item.paths.join(', ')} />
-                        <Text
-                            children={
-                                item.stopAllContainers
-                                    ? 'Stops all running containers (existing policy)'
-                                    : item.containerIds.length || item.composeProjects.length
-                                      ? `Stops ${item.containerIds.length} selected containers and ${item.composeProjects.length} Compose projects`
-                                      : 'Does not stop containers'
-                            }
-                        />
-                        {item.composeApplications.length > 0 && (
-                            <Text>
-                                {item.composeApplications.length} Compose applications captured for reconstruction
-                            </Text>
+                        {item.migrationRequired && (
+                            <Alert
+                                color="yellow"
+                                title="Review required"
+                                children="This set used container controls that this plugin no longer runs. Review its sources before the next backup."
+                            />
+                        )}
+                        <Text children={item.paths.length ? item.paths.join(', ') : 'No ordinary file paths'} />
+                        <Text children={`${item.composeSources.length} OMV Compose source(s)`} />
+                        {item.composeSources.length > 0 && (
+                            <Text
+                                c="yellow"
+                                children="Compose capture is best effort; archive and upload checks cannot prove its files were copied consistently."
+                            />
                         )}
                         <Group>
                             <Button
@@ -122,24 +119,31 @@ function SetEditor({
     close: () => void;
 }): ReactElement {
     const save = useMutation(ControlService.method.saveSet);
-    const inventory = useQuery(ControlService.method.listContainers);
-    const containers = inventory.data?.containers ?? [];
-    const [composeApplications, setComposeApplications] = useState(value.composeApplications);
+    const inventory = useQuery(ControlService.method.listComposeSources);
+    const [composeSources, setComposeSources] = useState<ComposeSource[]>(value.composeSources);
+    const [reviewed, setReviewed] = useState(false);
     const form = useForm({
         defaultValues: { ...value, paths: value.paths.join('\n'), exclusions: value.exclusions.join('\n') },
         onSubmit: async ({ value: edited }) => {
+            if (value.migrationRequired && !reviewed) return;
             try {
                 await save.mutateAsync({
                     set: {
                         ...edited,
-                        paths: edited.paths.split('\n').filter(Boolean),
-                        exclusions: edited.exclusions.split('\n').filter(Boolean),
-                        composeApplications: composeApplications.map(app => ({
-                            ...app,
-                            definitions: app.definitions.filter(Boolean),
-                            envFiles: app.envFiles.filter(Boolean),
-                            secretFiles: app.secretFiles.filter(Boolean),
-                        })),
+                        paths: edited.paths
+                            .split('\n')
+                            .map(path => path.trim())
+                            .filter(Boolean),
+                        exclusions: edited.exclusions
+                            .split('\n')
+                            .map(path => path.trim())
+                            .filter(Boolean),
+                        composeSources,
+                        stopAllContainers: false,
+                        containerIds: [],
+                        composeProjects: [],
+                        composeApplications: [],
+                        migrationRequired: false,
                     },
                     revision,
                 });
@@ -150,6 +154,8 @@ function SetEditor({
             }
         },
     });
+    const availableJobs = inventory.data?.jobs ?? [];
+    const availableStacks = inventory.data?.stacks ?? [];
     return (
         <form
             onSubmit={event => {
@@ -161,124 +167,13 @@ function SetEditor({
                 <Title order={1} children={value.id ? 'Edit backup set' : 'Add backup set'} />
                 <Failure error={save.error} />
                 <Failure error={inventory.error} />
-                <form.Field name="containerIds">
-                    {field => (
-                        <MultiSelect
-                            label="Containers to stop while archiving"
-                            searchable
-                            clearable
-                            description="Only previously running containers will be restarted."
-                            data={[
-                                ...containers.map(item => ({ value: item.id, label: item.name })),
-                                ...field.state.value
-                                    .filter(id => !containers.some(item => item.id === id))
-                                    .map(id => ({ value: id, label: `Missing container: ${id}` })),
-                            ]}
-                            value={field.state.value}
-                            onChange={next => {
-                                field.handleChange(next);
-                                if (next.length) form.setFieldValue('stopAllContainers', false);
-                            }}
-                        />
-                    )}
-                </form.Field>
-                <form.Field name="composeProjects">
-                    {field => (
-                        <MultiSelect
-                            label="Compose projects to stop while archiving"
-                            searchable
-                            clearable
-                            data={[
-                                ...new Set([
-                                    ...containers.map(item => item.composeProject).filter(Boolean),
-                                    ...field.state.value,
-                                ]),
-                            ]}
-                            value={field.state.value}
-                            onChange={next => {
-                                field.handleChange(next);
-                                setComposeApplications(current => current.filter(app => next.includes(app.project)));
-                                if (next.length) form.setFieldValue('stopAllContainers', false);
-                            }}
-                        />
-                    )}
-                </form.Field>
-                <form.Field name="composeProjects">
-                    {field => (
-                        <Stack gap="xs">
-                            <Title order={2} children="Recoverable Compose applications" />
-                            <Text
-                                size="sm"
-                                children="Select each application’s Compose files explicitly. Every file and bind source must be covered by the backup sources. Images need pullable registry digests; Docker volumes are unsupported."
-                            />
-                            {composeApplications.map((app, index) => (
-                                <Paper key={app.project} withBorder p="md">
-                                    <Stack>
-                                        <Group justify="space-between">
-                                            <Text fw={600} children={app.project} />
-                                            <Button
-                                                type="button"
-                                                color="red"
-                                                variant="outline"
-                                                onClick={() =>
-                                                    setComposeApplications(current =>
-                                                        current.filter((_, i) => i !== index),
-                                                    )
-                                                }
-                                                children="Remove"
-                                            />
-                                        </Group>
-                                        {(['definitions', 'envFiles', 'secretFiles'] as const).map(name => (
-                                            <Textarea
-                                                key={name}
-                                                label={
-                                                    name === 'definitions'
-                                                        ? 'Compose definition files, in order'
-                                                        : name === 'envFiles'
-                                                          ? 'Environment files'
-                                                          : 'Secret files'
-                                                }
-                                                description="Absolute paths, one per line"
-                                                required={name === 'definitions'}
-                                                minRows={2}
-                                                value={app[name].join('\n')}
-                                                onChange={event => {
-                                                    const files = event.currentTarget.value.split('\n');
-                                                    setComposeApplications(current =>
-                                                        current.map((entry, i) =>
-                                                            i === index ? { ...entry, [name]: files } : entry,
-                                                        ),
-                                                    );
-                                                }}
-                                            />
-                                        ))}
-                                    </Stack>
-                                </Paper>
-                            ))}
-                            <Select
-                                label="Add application for a selected project"
-                                placeholder="Choose project"
-                                clearable
-                                data={field.state.value.filter(
-                                    project => !composeApplications.some(app => app.project === project),
-                                )}
-                                value={null}
-                                onChange={project => {
-                                    if (project)
-                                        setComposeApplications(current => [
-                                            ...current,
-                                            create(ComposeApplicationSchema, {
-                                                project,
-                                                definitions: [],
-                                                envFiles: [],
-                                                secretFiles: [],
-                                            }),
-                                        ]);
-                                }}
-                            />
-                        </Stack>
-                    )}
-                </form.Field>
+                {value.migrationRequired && (
+                    <Alert
+                        color="yellow"
+                        title="Review container backup policy"
+                        children="The previous container stop and reconstruction settings will be removed when you save. Choose an OMV Compose source or confirm that backing up live files is acceptable."
+                    />
+                )}
                 <form.Field name="name">
                     {field => (
                         <TextInput
@@ -303,9 +198,9 @@ function SetEditor({
                     {field => (
                         <Textarea
                             label="Source directories, one per line"
-                            required
                             minRows={3}
                             value={field.state.value}
+                            description="Live files may change while they are archived. Use an application export or a snapshot for mutable databases."
                             onChange={event => field.handleChange(event.currentTarget.value)}
                         />
                     )}
@@ -320,22 +215,80 @@ function SetEditor({
                         />
                     )}
                 </form.Field>
-                <form.Field name="stopAllContainers">
-                    {field => (
-                        <Checkbox
-                            label="Stop all running containers during this backup"
-                            checked={field.state.value}
-                            onChange={event => {
-                                field.handleChange(event.currentTarget.checked);
-                                if (event.currentTarget.checked) {
-                                    form.setFieldValue('containerIds', []);
-                                    form.setFieldValue('composeProjects', []);
-                                    setComposeApplications([]);
+                <Title order={2} children="OMV Compose sources" />
+                <Text
+                    size="sm"
+                    children="Our schedule runs the selected Compose backup jobs, then archives their selected stack folders. Disable these jobs’ schedules in OMV Compose. Capture is best effort because Compose does not reliably report every rsync failure."
+                />
+                {inventory.data && !inventory.data.available && <Text c="dimmed" children={inventory.data.message} />}
+                {inventory.data?.available && availableJobs.length === 0 && (
+                    <Text c="dimmed" children="Create an unscheduled backup-only job in OMV Compose to add a source." />
+                )}
+                {inventory.data?.available && inventory.data.maxVolumeSize > 0n && (
+                    <Alert
+                        color="yellow"
+                        children={`OMV Compose skips volumes above its configured size limit (${inventory.data.maxVolumeSize.toString()} bytes) unless explicitly included.`}
+                    />
+                )}
+                {composeSources.map((source, index) => (
+                    <Paper key={index} withBorder p="md">
+                        <Stack>
+                            <Select
+                                label="Compose backup job"
+                                data={availableJobs.map(job => ({
+                                    value: job.id,
+                                    label: job.name,
+                                    disabled: job.scheduled,
+                                }))}
+                                value={source.jobId}
+                                onChange={jobId => {
+                                    if (jobId)
+                                        setComposeSources(current =>
+                                            current.map((entry, i) => (i === index ? { ...entry, jobId } : entry)),
+                                        );
+                                }}
+                            />
+                            <MultiSelect
+                                label="Stack folders to capture"
+                                searchable
+                                data={[...new Set([...availableStacks, ...source.stacks])]}
+                                value={source.stacks}
+                                onChange={stacks =>
+                                    setComposeSources(current =>
+                                        current.map((entry, i) => (i === index ? { ...entry, stacks } : entry)),
+                                    )
                                 }
-                            }}
-                        />
-                    )}
-                </form.Field>
+                            />
+                            <Button
+                                type="button"
+                                color="red"
+                                variant="outline"
+                                onClick={() => setComposeSources(current => current.filter((_, i) => i !== index))}
+                                children="Remove Compose source"
+                            />
+                        </Stack>
+                    </Paper>
+                ))}
+                <Button
+                    type="button"
+                    variant="default"
+                    disabled={!availableJobs.some(job => !job.scheduled)}
+                    onClick={() => {
+                        const job = availableJobs.find(
+                            entry => !entry.scheduled && !composeSources.some(source => source.jobId === entry.id),
+                        );
+                        if (job)
+                            setComposeSources(current => [...current, create(ComposeSourceSchema, { jobId: job.id })]);
+                    }}
+                    children="Add Compose source"
+                />
+                {value.migrationRequired && (
+                    <Checkbox
+                        label="I reviewed this set’s sources and understand its old container controls will be removed"
+                        checked={reviewed}
+                        onChange={event => setReviewed(event.currentTarget.checked)}
+                    />
+                )}
                 {(['localKeep', 'remoteKeep'] as const).map(name => (
                     <form.Field key={name} name={name}>
                         {field => (
@@ -353,7 +306,12 @@ function SetEditor({
                     </form.Field>
                 ))}
                 <Group>
-                    <Button type="submit" loading={save.isPending} children="Save backup set" />
+                    <Button
+                        type="submit"
+                        loading={save.isPending}
+                        disabled={value.migrationRequired && !reviewed}
+                        children="Save backup set"
+                    />
                     <Button type="button" variant="default" onClick={close} children="Cancel" />
                 </Group>
             </Stack>

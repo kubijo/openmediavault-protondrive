@@ -3,7 +3,8 @@ import unittest
 
 from helpers import configuration
 from protondrive.common import BackupError, locked
-from protondrive.config import applications, validate
+from protondrive.config import applications, compose_sources, validate
+from protondrive.models import ComposeSource
 
 
 class ConfigTests(unittest.TestCase):
@@ -43,6 +44,24 @@ class ConfigTests(unittest.TestCase):
         parsed = validate(raw)
         self.assertEqual(parsed['destinations'], config['destinations'])
         self.assertEqual(applications('json:[]'), [])
+        self.assertEqual(compose_sources('json:[]'), [])
+
+    def test_compose_source_can_replace_paths_and_legacy_scope_requires_review(self):
+        config, item = configuration()
+        source = ComposeSource(job_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', stacks=['database'])
+        item['paths'] = ''
+        item['composesources'] = [ComposeSource(job_id=source['job_id'], stacks=source['stacks'])]
+        self.assertEqual(validate(config)['sets'][0]['composesources'], [source])
+        item['stopcontainers'] = True
+        self.assertTrue(validate(config)['sets'][0]['migrationrequired'])
+        item['stopcontainers'] = False
+        self.assertFalse(validate(config)['sets'][0]['migrationrequired'])
+        item['composesources'] = [ComposeSource(job_id=source['job_id'], stacks=['database', 'database'])]
+        with self.assertRaisesRegex(BackupError, 'Duplicate OMV Compose stack'):
+            validate(config)
+        item['composesources'] = [source, ComposeSource(job_id=source['job_id'], stacks=['proxy'])]
+        with self.assertRaisesRegex(BackupError, 'job selected more than once'):
+            validate(config)
 
     def test_remote_destination_is_one_user_chosen_root_folder(self):
         config, _ = configuration()

@@ -20,7 +20,7 @@ from typing import Protocol
 from protondrive.cli import active, idle
 from protondrive.common import CONFIG, STATE, atomic_json, request
 from protondrive.config import load
-from protondrive.json_data import decode, object_value
+from protondrive.json_data import decode
 from protondrive.models import Configuration, RemoteEntry
 
 if __package__:
@@ -196,9 +196,6 @@ def prepare_containers(config: Configuration, value: FlowRecord, *, restart_gate
         value['containers'].append(cid)
         atomic_json(FLOW / 'record.json', value)
     run('docker', 'start', value['containers'][0])
-    for item in config['sets']:
-        item['stopcontainers'] = True
-    config['containerstoptimeout'] = 1
     atomic_json(FLOW / 'fixture-config.json', config)
     write_config(config)
 
@@ -216,9 +213,8 @@ def held() -> dict[str, bool | str]:
     if not (FLOW / 'archiving').exists():
         return {'held': False, 'phase': status().get('phase')}
     containers = record()['containers']
-    recovery = object_value(decode((STATE / 'recovery.json').read_text()))
-    if recovery['ids'] != [containers[0]] or any(running(cid) for cid in containers):
-        raise RuntimeError('The real runner did not stop only the running fixture container')
+    if (STATE / 'recovery.json').exists() or not running(containers[0]) or running(containers[1]):
+        raise RuntimeError('Backup changed container state')
     if not active():
         raise RuntimeError('Backup exited before the UI cancellation')
     return {'held': True}
@@ -235,13 +231,13 @@ def recovered() -> dict[str, bool]:
     if (STATE / 'recovery.json').exists():
         raise RuntimeError('Container recovery is incomplete')
     if not running(value['containers'][0]) or running(value['containers'][1]):
-        raise RuntimeError('Cancellation did not restore the original container states')
+        raise RuntimeError('Cancellation changed container state')
     config = load()
     if remote(config) != value['remote']:
         raise RuntimeError('Cancelled archive changed remote backup contents')
     if list(Path(config['stagingpath']).glob('*/*.partial')):
         raise RuntimeError('Cancellation left partial archives')
-    return {'cancelled': True, 'running_container_restored': True, 'stopped_container_preserved': True}
+    return {'cancelled': True, 'container_state_unchanged': True}
 
 
 def cleanup() -> dict[str, bool]:

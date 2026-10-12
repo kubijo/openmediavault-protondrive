@@ -10,8 +10,11 @@ from datetime import UTC, datetime
 from typing import cast
 
 from protondrive.common import FAILURE_CODES, BackupError, FailureCode
-from protondrive.config import applications, destinations
+from protondrive.compose_source import inventory as compose_inventory
+from protondrive.compose_source import validate_source
+from protondrive.config import applications, compose_sources, destinations
 from protondrive.json_data import JSONValue, boolean, decode, integer, object_value, string
+from protondrive.models import ComposeSource
 
 from .v1 import control_pb2 as wire
 
@@ -111,6 +114,16 @@ def backup_set(value: dict[str, JSONValue]) -> wire.BackupSet:
             )
             for app in applications(value.get('composeapps', ''))
         ],
+        compose_sources=[
+            wire.ComposeSource(job_id=source['job_id'], stacks=source['stacks'])
+            for source in compose_sources(value.get('composesources', ''))
+        ],
+        migration_required=bool(
+            boolean(value['stopcontainers'])
+            or string(value.get('containerids', ''))
+            or string(value.get('composeprojects', ''))
+            or applications(value.get('composeapps', ''))
+        ),
         local_keep=integer(value['localkeep']),
         remote_keep=integer(value['remotekeep']),
     )
@@ -156,6 +169,12 @@ class OMV:
         if self.list_sets(actor).revision != request.revision:
             raise ValueError('Backup sets changed; reload before saving')
         value = request.set
+        if value.compose_sources:
+            available = compose_inventory(actor)
+            if available is None:
+                raise BackupError('OMV Compose backup is not installed')
+            for source in value.compose_sources:
+                validate_source(ComposeSource(job_id=source.job_id, stacks=list(source.stacks)), available)
         result = self.rpc(
             actor,
             'ProtonDrive',
@@ -181,6 +200,10 @@ class OMV:
                     ],
                     separators=(',', ':'),
                 ),
+                'composesources': json.dumps(
+                    [{'job_id': source.job_id, 'stacks': list(source.stacks)} for source in value.compose_sources],
+                    separators=(',', ':'),
+                ),
                 'localkeep': value.local_keep,
                 'remotekeep': value.remote_keep,
             },
@@ -192,6 +215,25 @@ class OMV:
             raise ValueError('Backup sets changed; reload before deleting')
         self.rpc(actor, 'ProtonDrive', 'deleteSet', {'uuid': request.id})
         return wire.DeleteSetResponse()
+
+    def list_compose_sources(self, actor: str) -> wire.ListComposeSourcesResponse:
+        available = compose_inventory(actor)
+        if available is None:
+            return wire.ListComposeSourcesResponse(available=False, message='OMV Compose is not installed')
+        return wire.ListComposeSourcesResponse(
+            available=True,
+            jobs=[
+                wire.ComposeJob(id=job.id, scheduled=job.enabled, name=job.name)
+                for job in available.jobs
+                if job.backup
+                and not job.update
+                and not job.prune
+                and not job.skip_start_stop
+                and not job.exclude_filter
+            ],
+            stacks=list(available.stacks),
+            max_volume_size=available.max_volume_size,
+        )
 
     def status(self, actor: str) -> wire.GetStatusResponse:
         value = object_value(self.rpc(actor, 'ProtonDrive', 'getStatus', {}))
@@ -222,6 +264,7 @@ class OMV:
                     ),
                 )
             )
+        paused = value.get('paused')
         return wire.GetStatusResponse(
             phase=string(value['phase']),
             running=boolean(value['running']),
@@ -239,6 +282,8 @@ class OMV:
             transfer_elapsed_seconds=integer(value['transferelapsed']),
             pending_configuration=boolean(dirty),
             backends=backends,
+            capture_state=string(value.get('capture', '')),
+            paused_sets=[string(name) for name in paused] if isinstance(paused, list) else [],
         )
 
     def browse(self, actor: str, request: wire.BrowseDirectoriesRequest) -> wire.BrowseDirectoriesResponse:

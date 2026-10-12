@@ -41,17 +41,16 @@ name, so identity checks cannot eliminate a concurrent external modification bet
 Root creates the archives; the `protondrive` system user owns the private D-Bus/keyring session and runs the Proton CLI.
 The user has no Docker access. Completed staging files are root-owned and readable by that user's group.
 
-Before stopping containers, the runner persists their full IDs. It archives all container-sensitive sets during one
-stopped interval and restarts those same containers before verification and upload. Archive errors and cancellation also
-trigger recovery. Systemd runs recovery after abnormal runner termination; boot recovery handles power loss. A failed
-restart leaves a durable recovery record and fails the job. A second backup cannot run concurrently.
+For OMV Compose sources, the runner invokes the selected Compose job, seals selected output in private staging, then
+archives it. OMV Compose controls container state. A zero exit is insufficient proof of a complete rsync copy, so
+capture is reported as unverified. The archive and remote copies are checked independently. A second backup cannot run
+concurrently.
 
-When recovery remains pending, the overview shows **Recovery required**. Use **Recover containers** to retry restarting
-the containers that were running before the backup. Failed attempts keep the warning and recovery record; **Run now**
-becomes available again after recovery succeeds. Container recovery does not require a Proton sign-in.
+Recovery of containers stopped by the previous plugin version remains available. When a legacy recovery record is
+pending, use **Recover containers** before another backup; failed attempts retain the record.
 
-**Cancel backup** stops the supervised job and restores containers. Closing the browser or losing its connection leaves
-the job running. Configuration saves and Salt deployment check that no backup is active.
+**Cancel backup** waits for any active OMV Compose capture to finish before stopping the supervised job. Closing the
+browser leaves the job running. Configuration saves and Salt deployment check that no backup is active.
 
 The private session survives reboot and package upgrades. Authentication URLs are transient and omitted from logs.
 Removal retains backups and session state; package purge removes credentials/configuration but retains archives and

@@ -16,6 +16,7 @@ service ControlService {
   rpc WatchJob(WatchJobRequest) returns (stream WatchJobResponse);
   rpc BrowseDirectories(BrowseDirectoriesRequest) returns (BrowseDirectoriesResponse);
   rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc ListComposeSources(ListComposeSourcesRequest) returns (ListComposeSourcesResponse);
   rpc BrowseBackups(BrowseBackupsRequest) returns (BrowseBackupsResponse);
   rpc GetArchive(GetArchiveRequest) returns (GetArchiveResponse);
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
@@ -42,6 +43,8 @@ message GetStatusResponse {
   string error_code = 14;
   string started_at = 15;
   repeated BackendStatus backends = 16;
+  string capture_state = 17;
+  repeated string paused_sets = 18;
 }
 
 message BackendStatus {
@@ -106,7 +109,7 @@ message BackupSet {
   string id = 1;
   string name = 2 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,63}$"];
   bool enabled = 3;
-  repeated string paths = 4 [(buf.validate.field).repeated.min_items = 1];
+  repeated string paths = 4;
   repeated string exclusions = 5;
   bool stop_all_containers = 6;
   uint32 local_keep = 7 [(buf.validate.field).uint32 = {
@@ -120,6 +123,12 @@ message BackupSet {
   repeated string container_ids = 9 [(buf.validate.field).repeated.items.string.pattern = "^[a-f0-9]{64}$"];
   repeated string compose_projects = 10 [(buf.validate.field).repeated.items.string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
   repeated ComposeApplication compose_applications = 11;
+  repeated ComposeSource compose_sources = 12;
+  bool migration_required = 13;
+}
+message ComposeSource {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  repeated string stacks = 2 [(buf.validate.field).repeated.min_items = 1];
 }
 message ComposeApplication {
   string project = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
@@ -224,6 +233,20 @@ message Container {
 }
 message ListContainersResponse {
   repeated Container containers = 1;
+}
+
+message ListComposeSourcesRequest {}
+message ComposeJob {
+  string id = 1;
+  bool scheduled = 2;
+  string name = 3;
+}
+message ListComposeSourcesResponse {
+  bool available = 1;
+  repeated ComposeJob jobs = 2;
+  repeated string stacks = 3;
+  uint64 max_volume_size = 4;
+  string message = 5;
 }
 
 message BrowseBackupsRequest {
@@ -353,6 +376,7 @@ message BrokerRequest {
     PreviewExtractionRequest preview_extraction = 16;
     ReleaseArchiveRequest release_archive = 17;
     ListArchivesRequest list_archives = 18;
+    ListComposeSourcesRequest compose_sources = 19;
   }
 }
 message BrokerResponse {
@@ -375,6 +399,7 @@ message BrokerResponse {
     PreviewExtractionResponse preview_extraction = 16;
     ReleaseArchiveResponse release_archive = 17;
     ListArchivesResponse list_archives = 18;
+    ListComposeSourcesResponse compose_sources = 19;
   }
 }
 message JobEvents {

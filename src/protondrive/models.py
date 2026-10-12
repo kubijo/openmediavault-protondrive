@@ -2,6 +2,8 @@
 
 from typing import Literal, NotRequired, TypedDict
 
+from .json_data import JSONValue
+
 
 class ComposeApplication(TypedDict):
     project: str
@@ -28,6 +30,11 @@ class ComposeProjectManifest(ComposeApplication):
     services: list[ComposeServiceManifest]
 
 
+class ComposeSource(TypedDict):
+    job_id: str
+    stacks: list[str]
+
+
 class BackupSet(TypedDict):
     uuid: str
     name: str
@@ -38,6 +45,8 @@ class BackupSet(TypedDict):
     containerids: NotRequired[str]
     composeprojects: NotRequired[str]
     composeapps: NotRequired[list[ComposeApplication]]
+    composesources: list[ComposeSource]
+    migrationrequired: bool
     localkeep: int
     remotekeep: int
 
@@ -81,6 +90,7 @@ class Manifest(TypedDict):
     size: int
     sha256: str
     compose: NotRequired[list[ComposeProjectManifest]]
+    sources: NotRequired[list[dict[str, JSONValue]]]
 
 
 class TransferStatus(TypedDict):

@@ -1,6 +1,7 @@
 """Bounded extraction holds and controller crashes owned by one development probe."""
 
 import os
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -8,29 +9,45 @@ from pathlib import Path
 from protondrive.common import STATE, locked, sync_directory
 
 UNIT = 'omv-protondrive-controller.service'
+API_UNIT = 'omv-protondrive-api.service'
 OVERRIDE = Path(f'/run/systemd/system/{UNIT}.d/90-owned-restore.conf')
 TEMPLATE = Path(__file__).with_name('owned-restore.conf')
 SOCKET = Path('/run/omv-protondrive-controller/control.sock')
+API_SOCKET = Path('/run/omv-protondrive-api/api.sock')
 
 
 def run(*args: str) -> None:
     subprocess.run(args, check=True, capture_output=True, timeout=60)
 
 
+def api_ready() -> bool:
+    try:
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.settimeout(1)
+            connection.connect(str(API_SOCKET))
+            connection.sendall(b'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
+            return connection.recv(8).startswith(b'HTTP/')
+    except OSError:
+        return False
+
+
 def restart() -> None:
     before = SOCKET.stat() if SOCKET.exists() else None
     run('systemctl', 'restart', UNIT)
     deadline = time.monotonic() + 30
+    controller_ready = False
     while time.monotonic() < deadline:
         try:
             after = SOCKET.stat()
             if before is None or (before.st_ino, before.st_ctime_ns) != (after.st_ino, after.st_ctime_ns):
-                run('systemctl', 'is-active', UNIT)
-                return
+                controller_ready = True
         except FileNotFoundError:
             pass
+        if controller_ready and api_ready():
+            run('systemctl', 'is-active', UNIT, API_UNIT)
+            return
         time.sleep(0.1)
-    raise RuntimeError('Controller did not return; restore fixture retained')
+    raise RuntimeError('Controller or API did not return; restore fixture retained')
 
 
 def active(directory: Path) -> Path:

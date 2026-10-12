@@ -2,6 +2,7 @@
 Description=Proton Drive web RPC API
 After=omv-protondrive-controller.service
 Requires=omv-protondrive-controller.service
+ConditionPathIsDirectory=/var/lib/openmediavault-protondrive
 
 [Service]
 Type=simple

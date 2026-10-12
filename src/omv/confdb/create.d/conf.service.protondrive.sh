@@ -34,12 +34,13 @@ if ! omv_config_exists "$base"; then
             omv_config_add_key "$setpath" excludes ''
             omv_config_add_key "$setpath" stopcontainers 0
         else
+            omv_config_add_key "$setpath" enable 0
             omv_config_add_key "$setpath" paths /data/appData
             omv_config_add_key "$setpath" excludes 'cache
 logs
 immich/cache
 immich/redis'
-            omv_config_add_key "$setpath" stopcontainers 1
+            omv_config_add_key "$setpath" stopcontainers 0
         fi
         omv_config_rename "$setpath" set
     done

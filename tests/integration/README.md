@@ -110,13 +110,14 @@ Use a disposable Debian 12 / OMV 7 amd64 VM, test containers and the dedicated P
     `activeRevision.value.claimedSize`; verify commands terminate with stdin closed.
 04. Restore data through Proton with numeric ownership, setgid, ACLs, xattrs, symlinks and exclusions; verify checksums
     and database restoration.
-05. Run live/crash flows; only previously running containers may resume. Failed recovery must retain its record.
+05. Run the live UI cancellation flow; container states must remain unchanged. Exercise legacy recovery through the
+    disposable service regression; failed recovery must retain its record.
 06. Run retry flow; also inject tar failure, low/full staging and missing sources. Preserve pending complete archives
-    and the last confirmed backup; retry uploads before stopping containers again.
+    and the last confirmed backup; retry uploads before creating another archive.
 07. Race scheduled/manual jobs; only one proceeds. Closing the browser must leave the job running; explicit Cancel must
-    finish container recovery.
+    let an active OMV Compose capture finish restarting containers.
 08. Exceed retention counts; trash only oldest complete pairs. Duplicate names, folders, incomplete pairs and unrelated
     files must prevent unsafe cleanup. Never empty account-wide trash.
 09. Change schedule/destination, remove sets, disable, upgrade, remove and purge; retain old archives. Check systemd
     units and Lintian.
-10. Confirm no boot catch-up after missing 03:00; recover interrupted container stops before any later backup.
+10. Confirm no boot catch-up after missing 03:00; recover any legacy interrupted container stop before a later backup.

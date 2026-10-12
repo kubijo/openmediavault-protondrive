@@ -43,6 +43,11 @@ def manifest(value: object) -> Manifest:
     )
     if version == 2:
         result['compose'] = manifest_projects(data['compose'])
+    if 'sources' in data:
+        sources = data['sources']
+        if not isinstance(sources, list):
+            raise ValueError('Invalid source metadata')
+        result['sources'] = [object_value(source) for source in sources]
     return result
 
 

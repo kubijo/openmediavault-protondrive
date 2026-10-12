@@ -9,6 +9,7 @@ import { ControlService, Operation } from './generated/protondrive_api/v1/contro
 export function Overview(): ReactElement {
     const status = useQuery(ControlService.method.getStatus, {}, { refetchInterval: 3000 });
     const configuration = useQuery(ControlService.method.getConfiguration);
+    const sets = useQuery(ControlService.method.listSets);
     const operation = useMutation(ControlService.method.startOperation);
     const navigate = useNavigate();
     const start = async (kind: Operation, destinationId = ''): Promise<void> => {
@@ -48,6 +49,8 @@ export function Overview(): ReactElement {
                 },
             ];
     const targetsReady = backends.filter(backend => backend.enabled).every(backend => backend.state === 'signed-in');
+    const pausedSets =
+        sets.data?.sets.filter(item => item.enabled && item.migrationRequired).map(item => item.name) ?? [];
     return (
         <Stack>
             <Title order={1} children="Cloud Backup" />
@@ -133,6 +136,20 @@ export function Overview(): ReactElement {
                         />
                     )}
                     {data.error && <Failure error={failureError(data.error, data.errorCode)} />}
+                    {pausedSets.length > 0 && (
+                        <Alert
+                            color="yellow"
+                            title="Backup sets need review"
+                            children={`${pausedSets.join(', ')} still use old container controls and will be skipped. Review them under Backup sets.`}
+                        />
+                    )}
+                    {data.captureState === 'unverified' && (
+                        <Alert
+                            color="yellow"
+                            title="Compose capture unverified"
+                            children="The archive and uploads were checked, but OMV Compose may not report every file-copy failure. Check its backup log and volume exclusions."
+                        />
+                    )}
                     <Text>
                         Last successful backup:{' '}
                         {data.lastSuccess ? new Date(data.lastSuccess).toLocaleString() : 'None yet'}

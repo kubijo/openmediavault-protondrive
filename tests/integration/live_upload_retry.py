@@ -320,7 +320,7 @@ def failed() -> dict[str, object]:
     if any(entry['name'] == manifest.name for entry in listing[item['uuid']]):
         raise RuntimeError('Interrupted upload published a completion manifest')
     if list(Path(config['stagingpath']).glob('*/*.partial')) or (STATE / 'recovery.json').exists():
-        raise RuntimeError('Failed backup left partial archives or unrecovered containers')
+        raise RuntimeError('Failed backup left partial archives or a recovery record')
     containers = flow.record()['containers']
     if not flow.running(containers[0]) or flow.running(containers[1]):
         raise RuntimeError('Failed backup did not preserve the original container states')
@@ -355,24 +355,13 @@ def verify() -> dict[str, object]:
         raise RuntimeError('Retry did not confirm the original pending archive')
     if flow.status().get('phase') != 'completed':
         raise RuntimeError('Retry run did not complete')
-    cid = flow.record()['containers'][0]
-    events = flow.run(
-        'docker',
-        'events',
-        '--since',
-        str(value['retry_since']),
-        '--until',
-        str(time.time()),
-        '--filter',
-        f'container={cid}',
-        '--filter',
-        'event=die',
-        '--format',
-        '{{json .}}',
-    ).stdout
-    stopped = [integer(object_value(decode(line))['timeNano']) for line in events.splitlines()]
-    if not stopped or marker.stat().st_mtime_ns >= min(stopped):
-        raise RuntimeError('Pending upload was not confirmed before containers stopped')
+    later_archives = [
+        archive
+        for archive in (Path(config['stagingpath']) / item['uuid']).glob('*.tar.zst')
+        if archive != path and archive.stat().st_mtime > value['retry_since']
+    ]
+    if not later_archives or marker.stat().st_mtime_ns >= min(archive.stat().st_mtime_ns for archive in later_archives):
+        raise RuntimeError('Pending upload was not confirmed before the next archive')
     flow.report_activity('Download retried archive', path.name)
     with tempfile.TemporaryDirectory(prefix='live-proton-', dir='/run/omv-protondrive') as temporary:
         scratch = Path(temporary)
@@ -394,7 +383,7 @@ def verify() -> dict[str, object]:
     if not flow.running(containers[0]) or flow.running(containers[1]):
         raise RuntimeError('Retry did not recover the original container states')
     return {
-        'retried_before_container_stop': True,
+        'retried_before_new_archive': True,
         'archive': path.name,
         'restored': True,
         'payload_bytes': PAYLOAD_BYTES,

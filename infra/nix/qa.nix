@@ -31,6 +31,7 @@ let
       pkgs.nginx
       pkgs.just
       pkgs.monit
+      pkgs.rsync
     ];
     text = ''
       export PYTHONPATH="$PWD/src:$PWD/tests/unit:$PWD/tools"

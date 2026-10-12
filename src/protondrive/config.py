@@ -7,7 +7,7 @@ from typing import cast
 
 from .common import CONFIG, BackupError
 from .json_data import JSONValue, decode, object_value, string
-from .models import BackupSet, ComposeApplication, Configuration, Destination
+from .models import BackupSet, ComposeApplication, ComposeSource, Configuration, Destination
 
 
 def boolean(value: object) -> bool:
@@ -96,6 +96,48 @@ def applications(value: object) -> list[ComposeApplication]:
     return result
 
 
+def compose_sources(value: object) -> list[ComposeSource]:
+    if value == '' or value is None:
+        return []
+    if isinstance(value, str):
+        if len(value.encode()) > 65536:
+            raise BackupError('Invalid OMV Compose sources')
+        raw = decode(value.removeprefix('json:'))
+    else:
+        raw = value
+    if not isinstance(raw, list):
+        raise BackupError('Invalid OMV Compose sources')
+    members = cast('list[JSONValue]', raw)
+    if len(members) > 16:
+        raise BackupError('Invalid OMV Compose sources')
+    result: list[ComposeSource] = []
+    for member in members:
+        source = object_value(member)
+        if set(source) != {'job_id', 'stacks'} or not isinstance(source['stacks'], list):
+            raise BackupError('Invalid OMV Compose source')
+        raw_stacks = source['stacks']
+        if not raw_stacks or len(raw_stacks) > 32:
+            raise BackupError('Invalid OMV Compose stack selection')
+        stacks: list[str] = []
+        for name in raw_stacks:
+            if (
+                not isinstance(name, str)
+                or len(name) > 128
+                or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name) is None
+            ):
+                raise BackupError('Invalid OMV Compose stack selection')
+            stacks.append(name)
+        if len(stacks) != len(set(stacks)):
+            raise BackupError('Duplicate OMV Compose stack')
+        result.append(ComposeSource(job_id=identifier(source['job_id']), stacks=stacks))
+    all_stacks = [name for source in result for name in source['stacks']]
+    if len(all_stacks) != len(set(all_stacks)):
+        raise BackupError('OMV Compose stack selected more than once')
+    if len({source['job_id'] for source in result}) != len(result):
+        raise BackupError('OMV Compose job selected more than once')
+    return result
+
+
 def destinations(value: object, legacy_root: str) -> list[Destination]:
     if value is None or value == '':
         return [Destination(id='protondrive', kind='protondrive', name='Proton Drive', enable=True, root=legacy_root)]
@@ -176,6 +218,8 @@ def validate(value: object) -> Configuration:
             remotekeep=bounded(data['remotekeep'], 'remote retention', 1, 10000),
             paths=string(data['paths']),
             excludes=string(data['excludes']),
+            composesources=compose_sources(data.get('composesources', '')),
+            migrationrequired=False,
         )
         selected_containers = string(data.get('containerids', ''))
         selected_projects = string(data.get('composeprojects', ''))
@@ -186,6 +230,9 @@ def validate(value: object) -> Configuration:
         if len(lines(selected_projects)) != len(set(lines(selected_projects))):
             raise BackupError('Duplicate Compose project')
         compose_apps = applications(data.get('composeapps', ''))
+        item['migrationrequired'] = bool(
+            item['stopcontainers'] or selected_containers or selected_projects or compose_apps
+        )
         if compose_apps:
             if any(app['project'] not in lines(selected_projects) for app in compose_apps):
                 raise BackupError('Compose application must be a selected project')
@@ -202,7 +249,7 @@ def validate(value: object) -> Configuration:
         names.add(item['name'])
         ids.add(item['uuid'])
         paths = lines(item['paths'])
-        if not paths:
+        if not paths and not item['composesources']:
             raise BackupError('A backup set needs at least one source')
         resolved = [local_path(p) for p in paths]
         for path in resolved:

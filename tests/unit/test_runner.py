@@ -11,6 +11,7 @@ from helpers import configuration
 from protondrive import runner
 from protondrive.common import BackupError
 from protondrive.completion import read_completion
+from protondrive.compose_source import ComposeInventory, ComposeJob
 from protondrive.json_data import decode, object_value
 from protondrive.models import BackupSet, Configuration, Destination
 from protondrive.operation import Cancelled
@@ -124,28 +125,46 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(value['errorcode'], '')
             self.assertEqual(value['lastsuccess'], 'previous')
 
-    def exercise(self, fail: bool = False, unexpected: bool = False) -> None:
+    def exercise(self, fail: bool = False, unexpected: bool = False, compose: bool = False) -> None:
         with tempfile.TemporaryDirectory() as temporary, contextlib.ExitStack() as stack:
             root = Path(temporary)
-            config, item = configuration()
+            config, _ = configuration()
             config['stagingpath'] = str(root / 'staging')
-            item['stopcontainers'] = True
             events: list[str] = []
+            recovery = Mock(restore=lambda: events.append('restore'))
+            source = root / 'copies' / 'database'
+            if compose:
+                job_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                config['sets'][0]['composesources'] = [{'job_id': job_id, 'stacks': ['database']}]
+                source.mkdir(parents=True)
+                (source / 'dump.sql').write_text('sealed dump')
+                available = ComposeInventory(
+                    source.parent,
+                    (ComposeJob(job_id, 'Database', False, True, False, False, False, ''),),
+                    ('database',),
+                    0,
+                )
+                stack.enter_context(patch.object(runner, 'compose_inventory', return_value=available))
 
-            def stop(timeout: int) -> None:
-                events.append('stop')
+                def capture_compose(*_args: object) -> tuple[Path, ...]:
+                    events.append('capture')
+                    return (source,)
 
-            recovery = Mock(stop=stop, restore=lambda: events.append('restore'))
+                stack.enter_context(patch.object(runner, 'capture_compose', side_effect=capture_compose))
 
-            def archive(item: BackupSet, path: Path, reserve: int) -> None:
+            def archive(_item: BackupSet, path: Path, reserve: int, extra_sources: tuple[Path, ...]) -> None:
                 events.append('archive')
+                if compose:
+                    self.assertEqual(len(extra_sources), 1)
+                    self.assertEqual((extra_sources[0] / 'dump.sql').read_text(), 'sealed dump')
+                    self.assertNotEqual(extra_sources[0], source)
                 path.write_bytes(b'partial')
                 if fail:
                     if unexpected:
                         raise RuntimeError('private archive diagnostic')
                     raise BackupError('injected tar failure')
 
-            def publish(item: BackupSet, path: Path, *args: object) -> Path:
+            def publish(item: BackupSet, path: Path, *args: object, **kwargs: object) -> Path:
                 events.append('publish')
                 final = path.with_suffix('')
                 path.rename(final)
@@ -186,17 +205,22 @@ class RunnerTests(unittest.TestCase):
                 self.assertIsNone(read_completion(root))
             else:
                 runner.run()
-                self.assertEqual(events, ['restore', 'stop', 'archive', 'restore', 'publish', 'upload'])
+                self.assertEqual(events, ['restore', *(['capture'] if compose else []), 'archive', 'publish', 'upload'])
+                if compose:
+                    self.assertFalse(list((root / 'staging').glob('.compose-capture-*')))
                 completion = read_completion(root)
                 assert completion is not None
                 self.assertEqual(completion.generation, 1)
                 status = object_value(decode((root / 'status.json').read_text()))
                 self.assertEqual(completion.timestamp, status['lastsuccess'])
 
-    def test_containers_restart_before_verification_and_upload(self):
+    def test_archive_and_upload_after_legacy_recovery_check(self):
         self.exercise()
 
-    def test_archive_failure_restores_containers_and_never_uploads(self):
+    def test_compose_output_is_sealed_before_archiving(self):
+        self.exercise(compose=True)
+
+    def test_archive_failure_never_uploads(self):
         self.exercise(fail=True)
 
     def test_unexpected_archive_failure_has_a_redacted_reference(self):

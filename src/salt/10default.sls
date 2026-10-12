@@ -101,6 +101,7 @@ protondrive_controller:
     - name: omv-protondrive-controller
     - enable: True
     - require:
+      - file: protondrive_state
       - cmd: protondrive_reload
     - watch:
       - file: protondrive_unit_5

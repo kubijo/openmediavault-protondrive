@@ -150,6 +150,8 @@ class Controller:
                     )
                 case 'directories':
                     return wire.BrokerResponse(directories=self.omv.browse(request.actor, request.directories))
+                case 'compose_sources':
+                    return wire.BrokerResponse(compose_sources=self.omv.list_compose_sources(request.actor))
                 case 'containers':
                     return wire.BrokerResponse(
                         containers=wire.ListContainersResponse(

@@ -1,8 +1,8 @@
 # Owned web application
 
 `/protondrive/` uses OMV sessions, configuration and Save/Apply. It provides account and backup controls, settings,
-backup sets, container/Compose scopes, operation URLs, remote browsing and selected-file extraction. The legacy
-workbench remains during migration. Compose scopes currently control quiescing, not application reconstruction.
+backup sets, optional OMV Compose sources, operation URLs, remote browsing and selected-file extraction. The legacy
+workbench remains read-only during migration.
 
 Acceptance on 2026-10-07 passed disposable VM lifecycle/cache reuse and authenticated restore, metadata, collision
 rejection, cancellation, controller crash, browser reload, separate-process recovery and corrupt CLI lock repair.
@@ -13,18 +13,14 @@ controller, and matched an internal error reference to its journal entry.
 ## Remaining work
 
 - [ ] Verify authenticated foreign-instance browsing under the development root; requires a second instance.
-- [ ] Reconstruct Compose applications: capture explicitly selected definitions and environment/secret files, pin image
-  digests and pull during preflight. Record which services were running before capture. Support bind paths; reject
-  named/anonymous volumes. Never capture Docker environment values implicitly or bundle images.
-- [ ] Restore replacements and separate deployments with path/port mapping, conflict preview and preserved originals.
-  Verify Docker health or configured HTTP/TCP checks (five-minute default). Temporarily start originally stopped apps
-  for verification, then stop them. Roll back failed verification, cancellation after cutover and reboot during
-  cutover/verification. Retain rollback data for a configurable 24 hours; delete only after verified success. Never
-  restore system files over the running host.
+- [ ] Support database-native exports or atomic snapshots for mutable databases. Live files and OMV Compose rsync
+  captures are marked unverified; archive checksums only establish byte integrity.
+- [ ] Restore selected files and directories over existing paths with conflict preview and preserved originals. Roll
+  back failed publication, cancellation and reboot during publication. Never replace system files on the running host.
 - [ ] Check CPU compatibility before upgrading Proton CLI: the 0.9.0 download index omits our `linux-x64-baseline`
   build.
-- [ ] Verify existing configuration and archives before retiring the legacy view. Preserve standalone-container
-  quiescing and file restoration independently of Compose reconstruction.
+- [ ] Verify existing configuration and archives before retiring the legacy view. Sets with retired container controls
+  remain paused until reviewed in the owned UI; old archives stay readable.
 
 ## Extraction and recovery
 
@@ -32,12 +28,14 @@ In Remote backups, download and inspect an archive, select files, then preview e
 alone do not verify checksums. Existing destinations, device nodes and escaping links are refused; required parents and
 hard-link targets appear in the preview. Foreign storage is neither claimed nor subject to retention.
 
-For a selected Compose application, the backup set names its definition, environment and secret files explicitly. Those
-files and every bind source must be covered by backup sources. Preflight records service images by registry digest and
-pulls them before stopping containers; named and anonymous volumes or images without a pullable digest fail preflight.
-The completion manifest records the selected files, pinned images, replica counts and bind paths. Archive inspection
-checks that the named files and binds exist in the verified tar and shows the snapshot. Application deployment and
-rollback are tracked separately above.
+Archiving finishes before upload. Local and remote checksums prove the archive bytes match; they do not prove that files
+changed during archiving form a consistent database state.
+
+For an OMV Compose source, select an existing backup-only job with its schedule disabled and name the stacks to include.
+The plugin invokes that job once, seals its selected output in private staging, then archives those stack folders and
+the shared environment file if present. OMV Compose owns container state. Its current rsync path can miss a copy
+failure, so the manifest and UI mark capture unverified even when archive and upload checks pass. Restore the files into
+a new directory, then use OMV Compose to restore application data; application deployment is outside this plugin.
 
 Extraction preserves numeric ownership, permissions, ACLs, xattrs and links. Publication is atomic after staging is
 synced. Cancellation removes owned staging before publication; once publication starts, wait for its result. Restart
@@ -68,8 +66,8 @@ destination ID. Existing installations map their single Proton root to the `prot
   Abandoned jobs become interrupted on restart rather than replaying side effects.
 - Debian bundles hash-pinned CPython 3.11 wheels and declares native dependencies.
 
-Explicit scopes stop only selected running containers and recover only those previously running. Missing selections fail
-before archiving; existing stop-all settings retain their meaning.
+Existing stop-all and explicit container scopes are paused on upgrade. The old recovery command remains available for
+any containers stopped by a run before the upgrade.
 
 Use `nix run .#generate-api` to regenerate bindings, `just dev::validate` to check the build, and
 `just vm::probe --help` for browser assertions and artifacts.

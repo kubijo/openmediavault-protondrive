@@ -52,10 +52,6 @@ live *args:
 retry *args:
     nix run {{ nix_args }} .#web-probe -- --live --upload-retry "$@"
 
-# Verify real runner SIGKILL, failed container restart, and abrupt VM reboot recovery.
-crash *args:
-    nix run {{ nix_args }} .#web-probe -- --live --crash-recovery "$@"
-
 # Alias for the disposable local regression suite.
 flow *args:
     nix run {{ nix_args }} .#test-regression -- "$@"

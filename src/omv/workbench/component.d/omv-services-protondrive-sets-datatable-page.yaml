@@ -38,20 +38,4 @@ data:
         prop: remotekeep
         headerClass: protondrive-sets-column
         flexGrow: 1
-    actions:
-      - template: create
-        execute:
-          type: url
-          url: /services/protondrive/sets/create
-      - template: edit
-        execute:
-          type: url
-          url: '/services/protondrive/sets/edit/{{ _selected[0].uuid }}'
-      - template: delete
-        execute:
-          type: request
-          request:
-            service: ProtonDrive
-            method: deleteSet
-            params:
-              uuid: '{{ uuid }}'
+    actions: []
