@@ -51,6 +51,12 @@ export function Overview(): ReactElement {
     const targetsReady = backends.filter(backend => backend.enabled).every(backend => backend.state === 'signed-in');
     const pausedSets =
         sets.data?.sets.filter(item => item.enabled && item.migrationRequired).map(item => item.name) ?? [];
+    const captureWarning =
+        data.captureState === 'unverified'
+            ? 'Archive and upload checks do not prove application consistency. OMV Compose may also miss file-copy failures; check its backup log and volume exclusions.'
+            : data.captureState === 'live'
+              ? 'Archive and upload checks do not prove application consistency. Files can change while they are archived; use a database export or atomic snapshot for mutable data.'
+              : '';
     return (
         <Stack>
             <Title order={1} children="Cloud Backup" />
@@ -143,12 +149,8 @@ export function Overview(): ReactElement {
                             children={`${pausedSets.join(', ')} still use old container controls and will be skipped. Review them under Backup sets.`}
                         />
                     )}
-                    {data.captureState === 'unverified' && (
-                        <Alert
-                            color="yellow"
-                            title="Compose capture unverified"
-                            children="The archive and uploads were checked, but OMV Compose may not report every file-copy failure. Check its backup log and volume exclusions."
-                        />
+                    {captureWarning && (
+                        <Alert color="yellow" title="Capture consistency unverified" children={captureWarning} />
                     )}
                     <Text>
                         Last successful backup:{' '}

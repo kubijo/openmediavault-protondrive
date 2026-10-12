@@ -213,6 +213,7 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(completion.generation, 1)
                 status = object_value(decode((root / 'status.json').read_text()))
                 self.assertEqual(completion.timestamp, status['lastsuccess'])
+                self.assertEqual(status['capture'], 'unverified' if compose else 'live')
 
     def test_archive_and_upload_after_legacy_recovery_check(self):
         self.exercise()

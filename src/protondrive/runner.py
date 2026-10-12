@@ -127,17 +127,24 @@ def run() -> None:
         partials: list[tuple[BackupSet, Path]] = []
         sealed_workspace: tempfile.TemporaryDirectory[str] | None = None
         paused = [item['name'] for item in config['sets'] if item['enable'] and item['migrationrequired']]
+        items = [item for item in config['sets'] if item['enable'] and not item['migrationrequired']]
+        capture_state = (
+            'unverified'
+            if any(item['composesources'] for item in items)
+            else 'live'
+            if any(item['paths'].strip() for item in items)
+            else ''
+        )
         try:
             status(
                 'preflight',
                 error='',
                 started=datetime.now(UTC).isoformat(),
-                capture='',
+                capture=capture_state,
                 paused=validate(paused),
                 sources=[],
             )
             recovery.restore()
-            items = [item for item in config['sets'] if item['enable'] and not item['migrationrequired']]
             if not items:
                 raise BackupError('No runnable backup sets; review paused container-scoped sets')
             for destination in enabled_destinations(config):

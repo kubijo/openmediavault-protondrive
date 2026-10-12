@@ -19,7 +19,13 @@ export function failureError(message: string, failureCode: string): ConnectError
     ]);
 }
 
-export function Failure({ error }: { error: Error | null }): ReactElement | null {
+interface FailureProps {
+    error: Error | null;
+}
+
+export function Failure(props: FailureProps): ReactElement | null {
+    const { error } = props;
+
     if (!error) return null;
     const code = error instanceof ConnectError ? error.code : Code.Unknown;
     const message = error instanceof ConnectError ? error.rawMessage : error.message;

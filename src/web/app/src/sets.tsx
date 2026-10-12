@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { useMutation, useQuery } from '@connectrpc/connect-query';
 import {
     Alert,
+    Anchor,
     Button,
     Checkbox,
     Group,
@@ -109,15 +110,15 @@ export function BackupSets(): ReactElement {
     );
 }
 
-function SetEditor({
-    value,
-    revision,
-    close,
-}: {
+interface SetEditorProps {
     value: BackupSet;
     revision: string;
     close: () => void;
-}): ReactElement {
+}
+
+function SetEditor(props: SetEditorProps): ReactElement {
+    const { value, revision, close } = props;
+
     const save = useMutation(ControlService.method.saveSet);
     const inventory = useQuery(ControlService.method.listComposeSources);
     const [composeSources, setComposeSources] = useState<ComposeSource[]>(value.composeSources);
@@ -205,6 +206,22 @@ function SetEditor({
                         />
                     )}
                 </form.Field>
+                <Text size="sm">
+                    For Immich, include the upload directory (with its database dumps) and any external libraries. For
+                    Audiobookshelf, include its backup directory and every book or podcast library. Check that each app
+                    has made a recent database backup before this job runs.{' '}
+                    <Anchor
+                        href="https://docs.immich.app/administration/backup-and-restore/"
+                        target="_blank"
+                        children="Immich backup guide"
+                    />
+                    {' · '}
+                    <Anchor
+                        href="https://audiobookshelf.org/docs/documentation/server-management/backups/"
+                        target="_blank"
+                        children="Audiobookshelf backup guide"
+                    />
+                </Text>
                 <form.Field name="exclusions">
                     {field => (
                         <Textarea

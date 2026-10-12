@@ -13,7 +13,8 @@ controller, and matched an internal error reference to its journal entry.
 
 - [ ] Verify authenticated foreign-instance browsing under the development root; requires a second instance.
 - [ ] Support database-native exports or atomic snapshots for mutable databases. Live files and OMV Compose rsync
-  captures are marked unverified; archive checksums only establish byte integrity.
+  captures are marked unverified; archive checksums only establish byte integrity. See the
+  [Immich and Audiobookshelf backup guidance](application-backups.md) for the first application-specific cases.
 - [ ] Restore selected files and directories over existing paths with conflict preview and preserved originals. Roll
   back failed publication, cancellation and reboot during publication. Never replace system files on the running host.
 - [ ] Check CPU compatibility before upgrading Proton CLI: the 0.9.0 download index omits our `linux-x64-baseline`

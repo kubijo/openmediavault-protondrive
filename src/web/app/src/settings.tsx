@@ -16,13 +16,14 @@ export function Settings(): ReactElement {
     return <SettingsEditor key={data.revision} configuration={data.configuration} revision={data.revision} />;
 }
 
-export function SettingsEditor({
-    configuration,
-    revision,
-}: {
+interface SettingsEditorProps {
     configuration: Configuration;
     revision: string;
-}): ReactElement {
+}
+
+export function SettingsEditor(props: SettingsEditorProps): ReactElement {
+    const { configuration, revision } = props;
+
     const save = useMutation(ControlService.method.saveConfiguration);
     const [error, setError] = useState<Error | null>(null);
     const [destinations, setDestinations] = useState<Destination[]>(configuration.destinations);
